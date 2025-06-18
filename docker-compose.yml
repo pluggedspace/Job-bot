@@ -1,0 +1,61 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8001:8001"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DATABASE_URL=postgresql://jobbot:JoBB0t@db:5432/jobbot
+      - VIRTUAL_HOST=jobbot.pluggedspace.org
+      - VIRTUAL_PORT=8001
+      - LETSENCRYPT_HOST=jobbot.pluggedspace.org
+      - LETSENCRYPT_EMAIL=contact@pluggedspace.org
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - internal_network
+      - nginx-proxy-net
+    command: gunicorn jobsearchbot.wsgi:application --bind 0.0.0.0:8001 --workers 2 --timeout 120
+
+
+  bot:
+    build: .
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DATABASE_URL=postgresql://jobbot:JoBB0t@db:5432/jobbot
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - internal_network
+    command: python manage.py run_bot
+
+  db:
+    image: postgres:15
+    container_name: jobbot-db
+    environment:
+      POSTGRES_USER: jobbot
+      POSTGRES_PASSWORD: JoBB0t
+      POSTGRES_DB: jobbot
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - internal_network
+
+volumes:
+  db_data:
+
+networks:
+  internal_network:
+    driver: bridge
+  nginx-proxy-net:
+    external: true
