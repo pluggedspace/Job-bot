@@ -22,7 +22,7 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 # Global constants
-FREE_SEARCH_LIMIT = 5
+FREE_SEARCH_LIMIT = 10
 
 class JobSearchBot:
     def __init__(self):
@@ -36,6 +36,7 @@ class JobSearchBot:
         self.application.add_handler(CommandHandler("findjobs", self.find_jobs))
         self.application.add_handler(CommandHandler("subscribe", self.subscribe))
         self.application.add_handler(CommandHandler("setalert", self.set_alert))
+        self.application.add_handler(CommandHandler("myalerts", self.my_alerts))
         self.application.add_handler(CommandHandler("quota", self.check_quota))
         self.application.add_handler(CommandHandler("manual_verify", self.manual_verify))
         self.application.add_handler(CommandHandler("history", self.history))
@@ -44,6 +45,7 @@ class JobSearchBot:
         self.application.add_handler(CallbackQueryHandler(self.verify_payment, pattern=r"^verify_"))
         self.application.add_handler(CallbackQueryHandler(self.show_job_details, pattern=r"^view_")) 
         self.application.add_handler(CallbackQueryHandler(self.back_to_results, pattern=r"^back_to_results$"))
+        self.application.add_handler(CallbackQueryHandler(self.toggle_alert, pattern=r"^alert_"))
 
     # Database helper methods
     @staticmethod
@@ -107,6 +109,22 @@ class JobSearchBot:
     def get_alerts():
         return list(Alert.objects.filter(active=True))
 
+    @staticmethod
+    @sync_to_async
+    def get_user_alerts(user_id):
+        return list(Alert.objects.filter(user__user_id=user_id).order_by('-created_at'))
+
+    @staticmethod
+    @sync_to_async
+    def toggle_alert_status(alert_id):
+        try:
+            alert = Alert.objects.get(id=alert_id)
+            alert.active = not alert.active
+            alert.save()
+            return alert
+        except Alert.DoesNotExist:
+            return None
+
     # Command handlers
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
@@ -119,9 +137,23 @@ class JobSearchBot:
             await sync_to_async(user.save)()
         
         await update.message.reply_text(
-            "Welcome to the Job Search Bot!\n\n"
-            "Use /findjobs to search jobs, /subscribe to upgrade, /setalert to create job alerts, "
-            "/quota to check your limit, and /history to view your saved jobs."
+            "👋 Welcome to the Job Search Bot!\n\n"
+            "🔍 <b>Search Jobs</b>\n"
+            "Use /findjobs to search for jobs\n"
+            "Example: /findjobs python developer remote\n\n"
+            "🔔 <b>Job Alerts</b>\n"
+            "Use /setalert to create job alerts\n"
+            "Use /myalerts to manage your alerts\n\n"
+            "💎 <b>Premium Features</b>\n"
+            "• Unlimited job searches\n"
+            "• Up to 5 active job alerts\n"
+            "• View all search results\n"
+            "Use /subscribe to upgrade\n\n"
+            "📊 <b>Other Commands</b>\n"
+            "• /quota - Check your search limit\n"
+            "• /history - View saved jobs\n\n"
+            "Free users get {FREE_SEARCH_LIMIT} searches per month.",
+            parse_mode=ParseMode.HTML
         )
 
     async def show_job_details(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -169,7 +201,13 @@ class JobSearchBot:
     async def find_jobs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
         if not context.args:
-            await update.message.reply_text("Please provide search keywords.")
+            await update.message.reply_text(
+                "Please provide search keywords.\n\n"
+                "You can also use filters:\n"
+                "- /findjobs python remote\n"
+                "- /findjobs developer full-time\n"
+                "- /findjobs marketing entry-level"
+            )
             return
         
         query = " ".join(context.args)
@@ -183,13 +221,33 @@ class JobSearchBot:
         
         if not is_premium:
             if user.search_count >= FREE_SEARCH_LIMIT:
-                await update.message.reply_text("Free search limit reached. Use /subscribe to upgrade.")
+                await update.message.reply_text(
+                    f"You've reached your monthly limit of {FREE_SEARCH_LIMIT} free searches.\n"
+                    "Use /subscribe to upgrade to premium for unlimited searches!"
+                )
                 return
             await self.increment_search_count(user_id)
         
-        jobs = get_jobs(query)
+        # Add filters based on query
+        filters = {}
+        if "remote" in query.lower():
+            filters["remote"] = True
+        if "full-time" in query.lower():
+            filters["job_employment_type"] = "FULLTIME"
+        if "part-time" in query.lower():
+            filters["job_employment_type"] = "PARTTIME"
+        if "entry-level" in query.lower():
+            filters["job_experience_level"] = "ENTRY_LEVEL"
+        
+        jobs = get_jobs(query, filters)
         if not jobs:
-            await update.message.reply_text("No jobs found for your search criteria.")
+            await update.message.reply_text(
+                "No jobs found for your search criteria.\n\n"
+                "Try:\n"
+                "- Using different keywords\n"
+                "- Removing filters\n"
+                "- Checking your spelling"
+            )
             return
         
         # Cache the jobs for details view
@@ -198,17 +256,31 @@ class JobSearchBot:
             self.job_cache[job_id] = job
         
         # Send the first 5 jobs with details buttons
+        message = f"Found {len(jobs)} jobs matching your search:\n\n"
+        await update.message.reply_text(message)
+        
         for job in jobs[:5]:
             title = job.get('job_title', 'N/A')
             company = job.get('employer_name', 'Unknown')
+            location = f"{job.get('job_city', 'N/A')}, {job.get('job_country', 'N/A')}"
+            job_type = job.get('job_employment_type', 'N/A')
             job_id = job.get("job_id", str(hash(title + company)))
             
             await self.save_job(user_id, job_id, title, company)
             
             keyboard = [[InlineKeyboardButton("View Details", callback_data=f"view_{job_id}")]]
             await update.message.reply_text(
-                f"{title} at {company}",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                f"<b>{title}</b>\n"
+                f"Company: {company}\n"
+                f"Location: {location}\n"
+                f"Type: {job_type}",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        
+        if len(jobs) > 5:
+            await update.message.reply_text(
+                f"Showing first 5 results. Upgrade to premium to see all {len(jobs)} jobs!"
             )
 
     async def back_to_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -284,7 +356,13 @@ class JobSearchBot:
     async def set_alert(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
         if not context.args:
-            await update.message.reply_text("Usage: /setalert keyword(s)")
+            await update.message.reply_text(
+                "Usage: /setalert keyword(s)\n\n"
+                "Examples:\n"
+                "- /setalert python developer\n"
+                "- /setalert marketing remote\n"
+                "- /setalert data scientist entry-level"
+            )
             return
         
         query = " ".join(context.args)
@@ -294,8 +372,22 @@ class JobSearchBot:
             await update.message.reply_text("Please register first with /start")
             return
         
+        # Check if user already has too many active alerts
+        active_alerts = await sync_to_async(Alert.objects.filter)(user=user, active=True)
+        if len(active_alerts) >= 5:
+            await update.message.reply_text(
+                "You have reached the maximum limit of 5 active alerts.\n"
+                "Please deactivate some alerts before creating new ones."
+            )
+            return
+        
         alert = await self.create_alert(user_id, query)
-        await update.message.reply_text(f"Alert set for '{query}' (ID: {alert.id})")
+        await update.message.reply_text(
+            f"✅ Alert set for '{query}'\n\n"
+            f"ID: {alert.id}\n"
+            "You'll receive notifications when new jobs matching your criteria are found.\n"
+            "Use /myalerts to manage your alerts."
+        )
 
     async def check_quota(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
@@ -351,7 +443,67 @@ class JobSearchBot:
             logger.error(f"Manual verification error: {e}")
             await update.message.reply_text("An error occurred during verification.")
 
-    
+    async def my_alerts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = str(update.effective_user.id)
+        
+        user = await self.get_user(user_id)
+        if not user:
+            await update.message.reply_text("Please register first with /start")
+            return
+        
+        alerts = await self.get_user_alerts(user_id)
+        
+        if not alerts:
+            await update.message.reply_text(
+                "You don't have any job alerts set up.\n\n"
+                "Use /setalert to create your first alert!"
+            )
+            return
+        
+        message = "Your Job Alerts:\n\n"
+        for alert in alerts:
+            status = "✅ Active" if alert.active else "❌ Inactive"
+            message += (
+                f"ID: {alert.id}\n"
+                f"Query: {alert.query}\n"
+                f"Status: {status}\n"
+                f"Created: {alert.created_at.strftime('%Y-%m-%d')}\n\n"
+            )
+        
+        message += "Click the buttons below to toggle alerts:"
+        
+        # Create inline keyboard with toggle buttons
+        keyboard = []
+        for alert in alerts:
+            status = "Deactivate" if alert.active else "Activate"
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{status} Alert {alert.id}",
+                    callback_data=f"alert_{alert.id}"
+                )
+            ])
+        
+        await update.message.reply_text(
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    async def toggle_alert(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        alert_id = query.data.split("_", 1)[1]
+        alert = await self.toggle_alert_status(alert_id)
+        
+        if not alert:
+            await query.edit_message_text("Alert not found.")
+            return
+        
+        status = "activated" if alert.active else "deactivated"
+        await query.edit_message_text(
+            f"Alert for '{alert.query}' has been {status}.\n\n"
+            "Use /myalerts to manage your alerts."
+        )
 
     def run(self):
         self.application.run_polling()
