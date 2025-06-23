@@ -1,8 +1,8 @@
-from telegram import Update, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove 
 from telegram.ext import (
     ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 )
-from docx import Document
+from docx import Document 
 import os
 
 # Conversation states
@@ -148,7 +148,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 def get_cv_handler():
     """Return the ConversationHandler for the CV builder."""
     return ConversationHandler(
-        entry_points=[CommandHandler('build_cv', start_cv)],
+        entry_points=[
+            CommandHandler('build_cv', start_cv),
+            CommandHandler('cv', start_cv),  # Alias for /cv
+        ],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_title)],

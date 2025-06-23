@@ -14,7 +14,7 @@ from bot.utils import get_jobs, create_paystack_payment, verify_paystack_payment
 from bot.decorators import subscription_required
 from telegram.constants import ParseMode
 from telegram.constants import UpdateType
-from cv_builder import get_cv_handler
+from bot.cv_builder import get_cv_handler
 
 import threading
 import asyncio
@@ -143,6 +143,8 @@ class JobSearchBot:
             "🔍 <b>Search Jobs</b>\n"
             "Use /findjobs to search for jobs\n"
             "Example: /findjobs python developer remote\n\n"
+            "📝 <b>Build Your CV</b>\n"
+            "Use /build_cv to create a professional CV\n\n"
             "🔔 <b>Job Alerts</b>\n"
             "Use /setalert to create job alerts\n"
             "Use /myalerts to manage your alerts\n\n"
@@ -154,7 +156,7 @@ class JobSearchBot:
             "📊 <b>Other Commands</b>\n"
             "• /quota - Check your search limit\n"
             "• /history - View saved jobs\n\n"
-            "Free users get {FREE_SEARCH_LIMIT} searches per month.",
+            f"Free users get {FREE_SEARCH_LIMIT} searches per month.",
             parse_mode=ParseMode.HTML
         )
 
