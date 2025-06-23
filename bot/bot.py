@@ -14,7 +14,7 @@ from bot.utils import get_jobs, create_paystack_payment, verify_paystack_payment
 from bot.decorators import subscription_required
 from telegram.constants import ParseMode
 from telegram.constants import UpdateType
-from cv_builder import get_cv_handler
+from bot.cv_builder import get_cv_handler
 
 import threading
 import asyncio
