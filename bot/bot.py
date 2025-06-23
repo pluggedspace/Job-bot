@@ -14,6 +14,7 @@ from bot.utils import get_jobs, create_paystack_payment, verify_paystack_payment
 from bot.decorators import subscription_required
 from telegram.constants import ParseMode
 from telegram.constants import UpdateType
+from cv_builder import get_cv_handler
 
 import threading
 import asyncio
@@ -40,6 +41,7 @@ class JobSearchBot:
         self.application.add_handler(CommandHandler("quota", self.check_quota))
         self.application.add_handler(CommandHandler("manual_verify", self.manual_verify))
         self.application.add_handler(CommandHandler("history", self.history))
+        self.application.add_handler(CommandHandler("build_cv", get_cv_handler()))
         
         # Callback handlers
         self.application.add_handler(CallbackQueryHandler(self.verify_payment, pattern=r"^verify_"))
