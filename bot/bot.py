@@ -144,11 +144,7 @@ class JobSearchBot:
             "Use /findjobs to search for jobs\n"
             "Example: /findjobs python developer remote\n\n"
             "📝 <b>Build Your CV</b>\n"
-<<<<<<< HEAD
             "Use /build_cv to create a professional CV\n\n"
-=======
-            "Use /cv to create a professional CV\n\n"
->>>>>>> 9d6c8968e881b8ae37b5ca89f63487a0bc6dd96d
             "🔔 <b>Job Alerts</b>\n"
             "Use /setalert to create job alerts\n"
             "Use /myalerts to manage your alerts\n\n"
