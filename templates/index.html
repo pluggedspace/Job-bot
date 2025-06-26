@@ -1,0 +1,136 @@
+{% load static %}
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Job Autobot is your smart Telegram assistant for job search, CV building, and job alerts. Powered by Pluggedspace and trusted by thousands across Africa.">
+  <meta name="keywords" content="Job search, CV builder, Telegram bot, Africa jobs, Pluggedspace, remote jobs, smart job assistant">
+  <meta name="author" content="Pluggedspace">
+  <title>Job Autobot | Smart Job Assistant by Pluggedspace</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+  
+  <!-- Favicon icons -->
+<link rel="icon" type="image/png" sizes="32x32" href="{% static 'icons/favicon-32x32.png' %}">
+<link rel="icon" type="image/png" sizes="16x16" href="{% static 'icons/favicon-16x16.png' %}">
+<link rel="shortcut icon" href="{% static 'icons/favicon.ico' %}">
+
+<!-- Apple Touch Icon (iOS Home Screen) -->
+<link rel="apple-touch-icon" sizes="180x180" href="{% static 'icons/apple-touch-icon.png' %}">
+
+<!-- Android & PWA support -->
+<link rel="manifest" href="{% static 'icons/site.webmanifest' %}">
+<meta name="theme-color" content="#ffffff">
+
+</head>
+<body>
+  <header class="bg-primary text-white text-center py-5">
+    <h1 class="display-4">Get Hired Faster with Job Autobot</h1>
+    <p class="lead">Your smart Telegram assistant for job search, alerts, and CV building.</p>
+    <a href="https://t.me/jobautobot" class="btn btn-light btn-lg mt-3">🚀 Launch on Telegram</a>
+  </header>  <section class="container py-5">
+    <div class="text-center mb-4">
+      <!-- <img src="https://via.placeholder.com/800x300?text=Job+Autobot+Illustration" alt="Job Autobot Illustration" class="img-fluid rounded"> -->
+      <img src="{% static 'images/job-banner.png' %}" alt="Job Autobot Illustration" class="img-fluid rounded">
+      
+    </div>
+    <h2 class="text-center mb-4">What You Can Do with Job Autobot</h2>
+    <div class="row text-center">
+      <div class="col-md-4">
+        <h4>🔍 Smart Job Search</h4>
+        <p>Search for jobs by keywords, location, industry, or remote-only filters — right from your Telegram. Free users are limited to 10 searches per day.</p>
+      </div>
+      <div class="col-md-4">
+        <h4>📄 Free CV Builder</h4>
+        <p>Create a clean, professional CV in minutes. 1 CV is free to generate and download.</p>
+      </div>
+      <div class="col-md-4">
+        <h4>🔔 Pro Alerts</h4>
+        <p>Get custom job alerts daily or weekly. Available to Pro users only.</p>
+      </div>
+    </div>
+  </section>  <section class="bg-light py-5">
+    <div class="container">
+      <h2 class="text-center mb-4">Pricing</h2>
+      <div class="row justify-content-center">
+        <div class="col-md-6">
+          <table class="table table-bordered text-center">
+            <thead class="table-primary">
+              <tr>
+                <th>Feature</th>
+                <th>Free</th>
+                <th>Pro – $2.45/month</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Job Search</td>
+                <td>✅ 10 searches/day</td>
+                <td>✅ Unlimited</td>
+              </tr>
+              <tr>
+                <td>CV Builder</td>
+                <td>✅ 1 CV</td>
+                <td>✅ Multiple CVs</td>
+              </tr>
+              <tr>
+                <td>Job Alerts</td>
+                <td>❌</td>
+                <td>✅</td>
+              </tr>
+              <tr>
+                <td>Priority Support</td>
+                <td>❌</td>
+                <td>✅</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="text-center">
+            <a href="https://t.me/jobautobot" class="btn btn-primary">Start Free Now</a>
+            <a href="https://t.me/jobautobot" class="btn btn-outline-secondary ms-2">Upgrade to Pro</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>  <section class="container py-5">
+    <h2 class="text-center mb-4">Who It's For</h2>
+    <div class="row text-center">
+      <div class="col-md-3">📱 First-time job seekers</div>
+      <div class="col-md-3">🌍 Remote job hunters</div>
+      <div class="col-md-3">🧠 Freelancers & gig workers</div>
+      <div class="col-md-3">🎓 Students & fresh grads</div>
+    </div>
+  </section>  <section class="bg-white py-5">
+    <div class="container">
+      <h2 class="text-center mb-4">What Our Users Say</h2>
+      <div class="row text-center">
+        <div class="col-md-6">
+          <blockquote class="blockquote">
+            <p>“I got my first freelance gig through Job Autobot in under 2 weeks!”</p>
+            <footer class="blockquote-footer">Grace, Lagos</footer>
+          </blockquote>
+        </div>
+        <div class="col-md-6">
+          <blockquote class="blockquote">
+            <p>“It’s way better than surfing job boards. I just set my keyword and get matched.”</p>
+            <footer class="blockquote-footer">Samuel, Abuja</footer>
+          </blockquote>
+        </div>
+      </div>
+    </div>
+  </section>  <section class="bg-dark text-white py-5">
+    <div class="container text-center">
+      <h2 class="mb-3">Powered by Pluggedspace</h2>
+      <p>Job Autobot is built and maintained by <a href="https://pluggedspace.org" class="text-info">Pluggedspace</a>, an R&D company building automation tools for emerging markets.</p>
+    </div>
+  </section>  <section class="container py-5">
+    <h2 class="text-center mb-4">Partner With Us</h2>
+    <p class="text-center">We collaborate with youth-focused NGOs, job platforms, and universities. Interested?</p>
+    <div class="text-center">
+      <a href="mailto:contact@pluggedspace.org" class="btn btn-success">🤝 Contact Pluggedspace</a>
+    </div>
+  </section>  <footer class="bg-light text-center py-4">
+    <p class="mb-1">&copy; 2025 Job Autobot by Pluggedspace</p>
+    <p class="small">Built to empower job seekers.</p>
+  </footer></body>
+</html>

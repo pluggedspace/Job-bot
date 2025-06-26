@@ -20,7 +20,7 @@ SECRET_KEY = 'django-insecure-0mq1)2+s&w#p*cs10aq7+!)ywi2)r$zjpv!ktqmqkqun2*4x*e
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['jobbot.pluggedspace.org', '45.77.138.21', '45.77.138.21:8001']
+ALLOWED_HOSTS = ['jobbot.pluggedspace.org', '45.77.138.21', '45.77.138.21:8001', 'job.pluggedspace.org']
 
 
 # Application definition
@@ -52,7 +52,7 @@ ROOT_URLCONF = 'jobsearchbot.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -68,6 +68,7 @@ WSGI_APPLICATION = 'jobsearchbot.wsgi.application'
 
 CSRF_TRUSTED_ORIGINS = [
     "https://jobbot.pluggedspace.org",
+    "https://job.pluggedspace.org",
 ]
 
 
@@ -113,11 +114,21 @@ USE_I18N = True
 USE_TZ = True
 
 
+
+
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
+
 STATIC_URL = '/static/'
+
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

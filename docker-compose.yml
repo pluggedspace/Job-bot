@@ -10,9 +10,9 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - DATABASE_URL=postgresql://jobbot:JoBB0t@db:5432/jobbot
-      - VIRTUAL_HOST=jobbot.pluggedspace.org
+      - VIRTUAL_HOST=job.pluggedspace.org
       - VIRTUAL_PORT=8001
-      - LETSENCRYPT_HOST=jobbot.pluggedspace.org
+      - LETSENCRYPT_HOST=job.pluggedspace.org
       - LETSENCRYPT_EMAIL=contact@pluggedspace.org
     depends_on:
       - db

@@ -10,7 +10,7 @@ from telegram.ext import (
 from django.conf import settings
 from asgiref.sync import sync_to_async
 from bot.models import User, Job, Alert
-from bot.utils import get_jobs, create_paystack_payment, verify_paystack_payment
+from bot.utils import get_jobs, create_paystack_payment, verify_paystack_payment, get_jobs_arbeitnow
 from bot.decorators import subscription_required
 from telegram.constants import ParseMode
 from telegram.constants import UpdateType
@@ -243,7 +243,7 @@ class JobSearchBot:
         if "entry-level" in query.lower():
             filters["job_experience_level"] = "ENTRY_LEVEL"
         
-        jobs = get_jobs(query, filters)
+        jobs = get_all_jobs(query, filters)
         if not jobs:
             await update.message.reply_text(
                 "No jobs found for your search criteria.\n\n"
@@ -356,9 +356,10 @@ class JobSearchBot:
             logger.error(f"Payment verification error: {e}")
             await query.edit_message_text("An error occurred during verification.")
 
-    @subscription_required
+    #@subscription_required
     async def set_alert(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
+        logger.debug(f"[set_alert] user_id: {user_id}, args: {context.args}")
         if not context.args:
             await update.message.reply_text(
                 "Usage: /setalert keyword(s)\n\n"
@@ -368,24 +369,23 @@ class JobSearchBot:
                 "- /setalert data scientist entry-level"
             )
             return
-        
         query = " ".join(context.args)
-        
         user = await self.get_user(user_id)
+        logger.debug(f"[set_alert] user: {user}")
         if not user:
             await update.message.reply_text("Please register first with /start")
             return
-        
         # Check if user already has too many active alerts
         active_alerts = await sync_to_async(Alert.objects.filter)(user=user, active=True)
+        logger.debug(f"[set_alert] active_alerts count: {len(active_alerts)}")
         if len(active_alerts) >= 5:
             await update.message.reply_text(
                 "You have reached the maximum limit of 5 active alerts.\n"
                 "Please deactivate some alerts before creating new ones."
             )
             return
-        
         alert = await self.create_alert(user_id, query)
+        logger.debug(f"[set_alert] created alert: {alert}")
         await update.message.reply_text(
             f"✅ Alert set for '{query}'\n\n"
             f"ID: {alert.id}\n"
@@ -410,18 +410,19 @@ class JobSearchBot:
 
     async def history(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
-        
         jobs = await self.get_user_jobs(user_id)
-        
         if not jobs:
             await update.message.reply_text("You haven't saved any jobs yet.")
             return
-        
-        message = "Your recent saved jobs:\n\n"
-        for job in jobs:
-            message += f"{job.title} at {job.company}\n"
-        
-        await update.message.reply_text(message)
+        message = "<b>Your recent saved jobs:</b>\n\n"
+        for idx, job in enumerate(jobs, 1):
+            if hasattr(job, 'job_apply_link') and job.job_apply_link:
+                message += f"{idx}. <a href=\"{job.job_apply_link}\">{job.title}</a> at {job.company}\n"
+            elif hasattr(job, 'url') and job.url:
+                message += f"{idx}. <a href=\"{job.url}\">{job.title}</a> at {job.company}\n"
+            else:
+                message += f"{idx}. {job.title} at {job.company}\n"
+        await update.message.reply_text(message, parse_mode=ParseMode.HTML)
 
     async def manual_verify(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
@@ -449,21 +450,20 @@ class JobSearchBot:
 
     async def my_alerts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
-        
+        logger.debug(f"[my_alerts] user_id: {user_id}")
         user = await self.get_user(user_id)
+        logger.debug(f"[my_alerts] user: {user}")
         if not user:
             await update.message.reply_text("Please register first with /start")
             return
-        
         alerts = await self.get_user_alerts(user_id)
-        
+        logger.debug(f"[my_alerts] alerts: {alerts}")
         if not alerts:
             await update.message.reply_text(
                 "You don't have any job alerts set up.\n\n"
                 "Use /setalert to create your first alert!"
             )
             return
-        
         message = "Your Job Alerts:\n\n"
         for alert in alerts:
             status = "✅ Active" if alert.active else "❌ Inactive"
@@ -473,9 +473,7 @@ class JobSearchBot:
                 f"Status: {status}\n"
                 f"Created: {alert.created_at.strftime('%Y-%m-%d')}\n\n"
             )
-        
         message += "Click the buttons below to toggle alerts:"
-        
         # Create inline keyboard with toggle buttons
         keyboard = []
         for alert in alerts:
@@ -486,7 +484,6 @@ class JobSearchBot:
                     callback_data=f"alert_{alert.id}"
                 )
             ])
-        
         await update.message.reply_text(
             message,
             reply_markup=InlineKeyboardMarkup(keyboard)
@@ -512,6 +509,13 @@ class JobSearchBot:
     def run(self):
         self.application.run_polling()
         
+
+def get_all_jobs(query: str, filters: dict = None) -> list:
+    jobs = []
+    jobs += get_jobs(query, filters)  # Existing jsearch
+    jobs += get_jobs_arbeitnow(query, filters)  # New Arbeitnow
+    # Optionally deduplicate or sort
+    return jobs
 
 
 
