@@ -4,6 +4,7 @@ import json
 import logging
 from telegram import Update
 from .telegram_bot import bot_app
+from django.http import HttpResponse
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,13 @@ def paystack_callback(request):
 
 
 
+def robots_txt(request):
+    lines = [
+        "User-Agent: *",
+        "Disallow:",
+        "Sitemap: https://job.pluggedspace.org/sitemap.xml",
+    ]
+    return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
 

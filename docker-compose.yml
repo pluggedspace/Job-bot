@@ -1,8 +1,9 @@
+version: "3.9"
+
 services:
-  web:
+  job-web:
     build: .
-    ports:
-      - "8001:8001"
+    container_name: job-web
     volumes:
       - .:/app
     env_file:
@@ -10,21 +11,18 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - DATABASE_URL=postgresql://jobbot:JoBB0t@db:5432/jobbot
-      - VIRTUAL_HOST=job.pluggedspace.org
-      - VIRTUAL_PORT=8001
-      - LETSENCRYPT_HOST=job.pluggedspace.org
-      - LETSENCRYPT_EMAIL=contact@pluggedspace.org
     depends_on:
       - db
     restart: unless-stopped
     networks:
-      - internal_network
       - nginx-proxy-net
-    command: gunicorn jobsearchbot.wsgi:application --bind 0.0.0.0:8001 --workers 2 --timeout 120
+      - internal_network
+    command: gunicorn jobsearchbot.wsgi:application --bind 0.0.0.0:8010 --workers 2 --timeout 120
 
 
-  bot:
+  job-bot:
     build: .
+    container_name: job-bot
     volumes:
       - .:/app
     env_file:
@@ -50,6 +48,7 @@ services:
       - db_data:/var/lib/postgresql/data
     networks:
       - internal_network
+
 
 volumes:
   db_data:

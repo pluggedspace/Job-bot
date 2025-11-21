@@ -18,8 +18,6 @@ COPY . /app/
 # Collect static files
 RUN python manage.py collectstatic --noinput
 
-# Expose port
-EXPOSE 8001
 
 # Run server
 CMD ["python", "manage.py", "run_bot"]

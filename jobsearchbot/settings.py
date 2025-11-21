@@ -20,8 +20,17 @@ SECRET_KEY = 'django-insecure-0mq1)2+s&w#p*cs10aq7+!)ywi2)r$zjpv!ktqmqkqun2*4x*e
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['jobbot.pluggedspace.org', '45.77.138.21', '45.77.138.21:8001', 'job.pluggedspace.org']
+ALLOWED_HOSTS = ["api.pluggedspace.org", "job-web"]
 
+FORCE_SCRIPT_NAME = "/job"
+
+USE_X_FORWARDED_HOST = True
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_PATH = "/job/"
+CSRF_COOKIE_PATH = "/job/"
+SESSION_COOKIE_NAME = 'job_sessionid'
+CSRF_COOKIE_NAME = 'job_csrftoken'
 
 # Application definition
 
@@ -33,6 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django_apscheduler',
+    'django.contrib.sitemaps',
     'bot',
 ]
 
@@ -67,8 +77,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'jobsearchbot.wsgi.application'
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://jobbot.pluggedspace.org",
-    "https://job.pluggedspace.org",
+    "https://api.pluggedspace.org",
 ]
 
 
@@ -121,14 +130,20 @@ STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
-
-STATIC_URL = '/static/'
-
+STATIC_URL = "/job/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+if not DEBUG:
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 STATICFILES_DIRS = [
-    BASE_DIR / "static",
+    BASE_DIR / "/job/static/",
 ]
+
+
+MEDIA_URL = "/job/media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, 'job')
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

@@ -1,0 +1,177 @@
+{
+    "Software Developer": {
+        "broader": ["IT Specialist", "Computer Scientist"],
+        "narrower": ["Frontend Developer", "Backend Developer", "Fullstack Developer", "Mobile App Developer"],
+        "related": ["DevOps Engineer", "QA Engineer", "Product Manager"]
+    },
+    "Data Analyst": {
+        "broader": ["Business Analyst"],
+        "narrower": ["Junior Data Analyst", "Senior Data Analyst"],
+        "related": ["Data Scientist", "BI Developer", "Statistician"]
+    },
+    "Graphic Designer": {
+        "broader": ["Creative Professional"],
+        "narrower": ["UI Designer", "Visual Designer", "Brand Designer"],
+        "related": ["UX Designer", "Illustrator", "Animator"]
+    },
+    "Project Manager": {
+        "broader": ["Operations Manager"],
+        "narrower": ["Technical Project Manager", "Agile Project Manager"],
+        "related": ["Product Manager", "Program Manager", "Scrum Master"]
+    },
+    "Cybersecurity Analyst": {
+        "broader": ["IT Security Specialist"],
+        "narrower": ["SOC Analyst", "Threat Analyst", "Incident Responder"],
+        "related": ["Network Engineer", "Penetration Tester", "Risk Analyst"]
+    },
+    "Digital Marketer": {
+        "broader": ["Marketing Specialist"],
+        "narrower": ["SEO Specialist", "PPC Specialist", "Email Marketer"],
+        "related": ["Content Marketer", "Social Media Manager", "Brand Manager"]
+    },
+    "Product Manager": {
+        "broader": ["Business Strategist"],
+        "narrower": ["Technical Product Manager", "Growth Product Manager"],
+        "related": ["Project Manager", "UX Researcher", "Marketing Manager"]
+    },
+    "Customer Support Specialist": {
+        "broader": ["Support Specialist"],
+        "narrower": ["Live Chat Agent", "Phone Support Agent"],
+        "related": ["Technical Support", "Client Success Manager", "Help Desk Technician"]
+    },
+    "Financial Analyst": {
+        "broader": ["Finance Professional"],
+        "narrower": ["Equity Analyst", "Risk Analyst", "Investment Analyst"],
+        "related": ["Accountant", "Economist", "Data Analyst"]
+    },
+    "Content Writer": {
+        "broader": ["Creative Writer"],
+        "narrower": ["Copywriter", "Technical Writer", "SEO Writer"],
+        "related": ["Editor", "Blogger", "Content Marketer"]
+    },
+    "Educator": {
+        "broader": ["Academic Professional"],
+        "narrower": ["High School Teacher", "Primary School Teacher", "Online Instructor"],
+        "related": ["Guidance Counselor", "Curriculum Developer", "Tutor"]
+    },
+    "Registered Nurse": {
+        "broader": ["Healthcare Worker"],
+        "narrower": ["ICU Nurse", "Pediatric Nurse", "Surgical Nurse"],
+        "related": ["Medical Assistant", "Physician", "Nurse Practitioner"]
+    },
+    "Medical Doctor": {
+        "broader": ["Healthcare Professional"],
+        "narrower": ["General Practitioner", "Cardiologist", "Surgeon"],
+        "related": ["Registered Nurse", "Radiologist", "Pharmacist"]
+    },
+    "Public Administrator": {
+        "broader": ["Government Officer"],
+        "narrower": ["Local Government Officer", "Policy Analyst", "Civil Service Officer"],
+        "related": ["Urban Planner", "Legislative Aide", "Program Coordinator"]
+    },
+    "Lawyer": {
+        "broader": ["Legal Professional"],
+        "narrower": ["Corporate Lawyer", "Criminal Lawyer", "Civil Rights Lawyer"],
+        "related": ["Legal Assistant", "Judge", "Paralegal"]
+    },
+    "Legal Assistant": {
+        "broader": ["Legal Support Staff"],
+        "narrower": ["Paralegal", "Litigation Assistant"],
+        "related": ["Court Clerk", "Lawyer", "Case Manager"]
+    },
+    "Maintenance Technician": {
+        "broader": ["Skilled Trade"],
+        "narrower": ["Electrician", "HVAC Technician", "Plumber"],
+        "related": ["Facilities Manager", "Construction Worker", "Machinist"]
+    },
+    "Automotive Technician": {
+        "broader": ["Mechanic"],
+        "narrower": ["Transmission Technician", "Brake Specialist"],
+        "related": ["Diesel Mechanic", "Auto Electrician", "Vehicle Inspector"]
+    },
+    "Logistics Coordinator": {
+        "broader": ["Supply Chain Professional"],
+        "narrower": ["Warehouse Manager", "Delivery Supervisor", "Inventory Controller"],
+        "related": ["Transport Planner", "Procurement Officer", "Fleet Manager"]
+    },
+    "HR Specialist": {
+        "broader": ["People Operations"],
+        "narrower": ["Recruiter", "HR Generalist", "HR Coordinator"],
+        "related": ["Talent Acquisition", "Training Manager", "Compensation Analyst"]
+    },
+    "UX Researcher": {
+        "broader": ["User Experience Professional"],
+        "narrower": ["User Tester", "Persona Researcher"],
+        "related": ["UX Designer", "Product Manager", "Content Strategist"]
+    },
+    "Data Scientist": {
+        "broader": ["Data Professional"],
+        "narrower": ["Machine Learning Engineer", "AI Researcher"],
+        "related": ["Data Analyst", "Statistician", "Research Scientist"]
+    },
+    "QA Engineer": {
+        "broader": ["Software Testing Professional"],
+        "narrower": ["Automation Tester", "Manual Tester"],
+        "related": ["DevOps Engineer", "Software Developer", "Product Manager"]
+    },
+    "Economist": {
+        "broader": ["Finance Professional"],
+        "narrower": ["Macroeconomist", "Microeconomist", "Development Economist"],
+        "related": ["Statistician", "Financial Analyst", "Policy Analyst"]
+    },
+    "Event Planner": {
+        "broader": ["Hospitality Manager"],
+        "narrower": ["Wedding Planner", "Corporate Event Organizer"],
+        "related": ["Venue Manager", "Public Relations Officer", "Marketing Specialist"]
+    },
+    "Machine Learning Engineer": {
+        "broader": ["AI Specialist", "Data Scientist"],
+        "narrower": ["Computer Vision Engineer", "NLP Specialist"],
+        "related": ["Research Scientist", "Algorithm Developer"]
+    },
+    "Cloud Engineer": {
+        "broader": ["IT Infrastructure Specialist"],
+        "narrower": ["AWS Architect", "Azure Specialist"],
+        "related": ["DevOps Engineer", "Network Engineer"]
+    },
+    "Renewable Energy Technician": {
+        "broader": ["Green Energy Worker"],
+        "narrower": ["Solar Panel Installer", "Wind Farm Technician"],
+        "related": ["Environmental Engineer", "Sustainability Consultant"]
+    },
+    "Financial Technology Specialist": {
+        "broader": ["Finance Professional"],
+        "narrower": ["Blockchain Developer", "Payment Systems Analyst"],
+        "related": ["Quantitative Analyst", "Risk Manager"]
+    },
+    "Product Designer": {
+        "broader": ["Design Strategist"],
+        "narrower": ["Interaction Designer", "Service Designer"],
+        "related": ["Industrial Designer", "Human Factors Engineer"]
+    },
+    "XR Developer": {
+        "broader": ["Immersive Tech Specialist"],
+        "narrower": ["Virtual Reality Developer", "Augmented Reality Designer"],
+        "related": ["3D Modeler", "Game Engine Programmer"]
+    },
+    "DEI Consultant": {
+        "broader": ["HR Strategist"],
+        "narrower": ["Inclusion Trainer", "Workplace Equity Analyst"],
+        "related": ["Organizational Psychologist", "HR Business Partner"]
+    },
+    "Gaming Strategist": {
+        "broader": ["Entertainment Industry Professional"],
+        "narrower": ["E-sports Coach", "Game Community Manager"],
+        "related": ["Streaming Content Creator", "Game Producer"]
+    },
+    "Aerospace Technician": {
+        "broader": ["Aviation Professional"],
+        "narrower": ["Satellite Technician", "Drone Systems Engineer"],
+        "related": ["Aeronautical Engineer", "Flight Test Specialist"]
+    },
+    "Precision Farming Expert": {
+        "broader": ["Agricultural Scientist"],
+        "narrower": ["Hydroponics Specialist", "AgriData Analyst"],
+        "related": ["Environmental Scientist", "Supply Chain Logistician"]
+    }
+}
