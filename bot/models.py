@@ -37,6 +37,12 @@ class TenantUser(models.Model):
     # Job bot specific fields
     subscription_status = models.CharField(max_length=20, default='Free')
     payment_reference = models.CharField(max_length=100, null=True, blank=True)
+    payment_provider = models.CharField(
+        max_length=20,
+        choices=[('paystack', 'Paystack'), ('flutterwave', 'Flutterwave')],
+        null=True,
+        blank=True
+    )
     search_count = models.IntegerField(default=0)
     cv_data = models.JSONField(null=True, blank=True)
     current_job_title = models.CharField(max_length=255, null=True, blank=True)

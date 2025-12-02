@@ -8,18 +8,25 @@ from rest_framework import status
 import logging
 import time
 
-from bot.utils import create_paystack_payment, verify_paystack_payment
+from bot.utils import (
+    create_paystack_payment, verify_paystack_payment,
+    create_flutterwave_payment, verify_flutterwave_payment
+)
 from bot.models import User
 
 logger = logging.getLogger(__name__)
 
-FREE_SEARCH_LIMIT = 10
+FREE_SEARCH_LIMIT = 15
 
 
 class CreateSubscriptionView(APIView):
     """
     POST /api/subscription/create
-    Body: {"email": "user@example.com"}
+    Body: {
+        "email": "user@example.com",
+        "currency": "NGN" or "USD",  # Optional, defaults to NGN
+        "provider": "paystack" or "flutterwave"  # Optional, auto-selected based on currency
+    }
     
     Create a payment link for subscription
     """
@@ -27,6 +34,19 @@ class CreateSubscriptionView(APIView):
     
     def post(self, request):
         email = request.data.get('email', '').strip()
+        currency = request.data.get('currency', 'NGN').upper()
+        provider = request.data.get('provider', '').lower()
+        
+        # Auto-select provider based on currency if not specified
+        if not provider:
+            provider = 'paystack' if currency == 'NGN' else 'flutterwave'
+        
+        # Validate currency-provider combination
+        if provider == 'paystack' and currency != 'NGN':
+            return Response(
+                {'error': 'Paystack only supports NGN currency'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         if not email:
             # Use tenant user's email
@@ -53,15 +73,50 @@ class CreateSubscriptionView(APIView):
             user_id = platform_user.user_id
             
             # Generate payment reference
-            reference = f"REF_{user_id}_{int(time.time())}"
+            reference = f"{provider.upper()}_{user_id}_{int(time.time())}"
             
-            # Create payment
-            data = create_paystack_payment(email, 4500, reference)
+            # Create payment based on provider
+            if provider == 'paystack':
+                amount = 4500  # NGN
+                data = create_paystack_payment(email, amount, reference)
+                
+                if not data.get("status"):
+                    return Response(
+                        {'error': 'Error creating payment link'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                
+                response_data = {
+                    'authorization_url': data['data']['authorization_url'],
+                    'access_code': data['data'].get('access_code'),
+                    'reference': reference,
+                    'amount': amount,
+                    'currency': 'NGN',
+                    'provider': 'paystack'
+                }
             
-            if not data.get("status"):
+            elif provider == 'flutterwave':
+                amount = 9.99 if currency == 'USD' else 4500  # USD or NGN
+                data = create_flutterwave_payment(email, amount, currency, reference)
+                
+                if data.get("status") == "error":
+                    return Response(
+                        {'error': 'Error creating payment link'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                
+                response_data = {
+                    'authorization_url': data['data']['link'],
+                    'reference': reference,
+                    'amount': amount,
+                    'currency': currency,
+                    'provider': 'flutterwave'
+                }
+            
+            else:
                 return Response(
-                    {'error': 'Error creating payment link'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {'error': 'Invalid payment provider'},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
             
             # Update user status to Pending
@@ -69,13 +124,7 @@ class CreateSubscriptionView(APIView):
             platform_user.payment_reference = reference
             platform_user.save()
             
-            return Response({
-                'authorization_url': data['data']['authorization_url'],
-                'access_code': data['data'].get('access_code'),
-                'reference': reference,
-                'amount': 4500,
-                'currency': 'NGN'
-            })
+            return Response(response_data)
         except Exception as e:
             logger.error(f"Create subscription error: {e}", exc_info=True)
             return Response(
@@ -87,7 +136,10 @@ class CreateSubscriptionView(APIView):
 class VerifyPaymentView(APIView):
     """
     POST /api/subscription/verify
-    Body: {"reference": "REF_123456"}
+    Body: {
+        "reference": "REF_123456",
+        "provider": "paystack" or "flutterwave"  # Optional, auto-detected from reference
+    }
     
     Verify payment status
     """
@@ -95,12 +147,23 @@ class VerifyPaymentView(APIView):
     
     def post(self, request):
         reference = request.data.get('reference', '').strip()
+        provider = request.data.get('provider', '').lower()
         
         if not reference:
             return Response(
                 {'error': 'Payment reference is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Auto-detect provider from reference if not provided
+        if not provider:
+            if reference.startswith('PAYSTACK_'):
+                provider = 'paystack'
+            elif reference.startswith('FLUTTERWAVE_') or reference.startswith('FLW_'):
+                provider = 'flutterwave'
+            else:
+                # Default to paystack for backward compatibility
+                provider = 'paystack'
         
         try:
             # Get platform user
@@ -115,10 +178,22 @@ class VerifyPaymentView(APIView):
             
             platform_user = platform_users.first()
             
-            # Verify payment
-            result = verify_paystack_payment(reference)
+            # Verify payment based on provider
+            if provider == 'paystack':
+                result = verify_paystack_payment(reference)
+                success = result.get("data", {}).get("status") == "success"
             
-            if result.get("data", {}).get("status") == "success":
+            elif provider == 'flutterwave':
+                result = verify_flutterwave_payment(reference)
+                success = result.get("data", {}).get("status") == "successful"
+            
+            else:
+                return Response(
+                    {'error': 'Invalid payment provider'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if success:
                 platform_user.subscription_status = "Paid"
                 platform_user.payment_reference = reference
                 platform_user.save()
@@ -142,6 +217,7 @@ class VerifyPaymentView(APIView):
                 {'error': 'An error occurred during verification'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
 
 
 class QuotaView(APIView):

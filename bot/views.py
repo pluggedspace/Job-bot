@@ -1,11 +1,11 @@
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import redirect
 import json
 import logging
 from telegram import Update
 from .telegram_bot import bot_app
-from django.http import HttpResponse
-
+from .utils import verify_flutterwave_payment
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,27 @@ def paystack_callback(request):
         # Implement your callback logic here
         return JsonResponse({'status': 'success'})
     return JsonResponse({'status': 'error'}, status=400)
+
+
+@csrf_exempt
+def flutterwave_callback(request):
+    """Handle Flutterwave payment callback"""
+    if request.method == 'GET':
+        # Redirect callback
+        status = request.GET.get('status')
+        tx_ref = request.GET.get('tx_ref')
+        transaction_id = request.GET.get('transaction_id')
+        
+        if status == 'successful':
+            # Verify the transaction
+            result = verify_flutterwave_payment(transaction_id)
+            if result.get("data", {}).get("status") == "successful":
+                # Redirect to success page on frontend
+                return redirect('https://job.pluggedspace.org/dashboard/subscription?status=success')
+        
+        return redirect('https://job.pluggedspace.org/dashboard/subscription?status=failed')
+    
+    return JsonResponse({'status': 'ok'})
 
 
 

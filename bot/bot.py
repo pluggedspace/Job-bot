@@ -12,7 +12,10 @@ from telegram.ext import (
 from django.conf import settings
 from asgiref.sync import sync_to_async
 from bot.models import User, Job, Alert, InterviewSession, InterviewResponse
-from bot.utils import create_paystack_payment, verify_paystack_payment
+from bot.utils import (
+    create_paystack_payment, verify_paystack_payment,
+    create_flutterwave_payment, verify_flutterwave_payment
+)
 from bot.decorators import subscription_required
 from bot.functions.jobs import get_jobs, get_jobs_arbeitnow, get_all_jobs
 from telegram.constants import ParseMode
@@ -64,7 +67,8 @@ class JobSearchBot:
         self.application.add_handler(CommandHandler("account", self.account_info_command))
 
         # Callback handlers
-        self.application.add_handler(CallbackQueryHandler(self.verify_payment, pattern=r"^verify_"))
+        self.application.add_handler(CallbackQueryHandler(self.handle_subscription_callback, pattern="^sub_currency_"))
+        self.application.add_handler(CallbackQueryHandler(self.verify_payment, pattern=r"^verify_")) 
         self.application.add_handler(CallbackQueryHandler(self.show_job_details, pattern=r"^view_")) 
         self.application.add_handler(CallbackQueryHandler(self.save_job_callback, pattern=r"^save_"))
         self.application.add_handler(CallbackQueryHandler(self.back_to_results, pattern=r"^back_to_results$"))
@@ -695,32 +699,83 @@ class JobSearchBot:
             return
         
         email = context.args[0]
-        reference = f"REF_{user_id}{int(time.time())}"
         
         user = await self.get_user(user_id)
         if not user:
             await update.message.reply_text("Please register first with /start")
             return
-        
-        data = create_paystack_payment(email, 4500, reference)
-        
-        if not data.get("status"):
-            await update.message.reply_text("Error creating payment link.")
-            return
-        
-        url = data['data']['authorization_url']
-        await self.update_user_status(user_id, "Pending", reference)
+            
+        # Store email in user_data for the callback
+        context.user_data['subscribe_email'] = email
         
         buttons = [
-            [InlineKeyboardButton("Pay Now", url=url)],
-            [InlineKeyboardButton("Verify", callback_data=f"verify_{reference}")]
+            [InlineKeyboardButton("🇳🇬 Pay with NGN (Paystack)", callback_data="sub_currency_NGN")],
+            [InlineKeyboardButton("🇺🇸 Pay with USD (Flutterwave)", callback_data="sub_currency_USD")]
         ]
+        
         await update.message.reply_text(
-            "💳 *Complete your payment*\n"
-            "Click the link below to pay securely via Paystack.",
+            "� *Choose your currency*\n\n"
+            "Select your preferred currency for the Premium subscription:",
             reply_markup=InlineKeyboardMarkup(buttons),
             parse_mode=ParseMode.MARKDOWN
         )
+
+    async def handle_subscription_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        currency = query.data.split("_")[2]  # sub_currency_NGN or sub_currency_USD
+        user_id = str(update.effective_user.id)
+        email = context.user_data.get('subscribe_email')
+        
+        if not email:
+            await query.edit_message_text("Session expired. Please start over with /subscribe <email>")
+            return
+            
+        provider = 'paystack' if currency == 'NGN' else 'flutterwave'
+        reference = f"{provider.upper()}_{user_id}_{int(time.time())}"
+        
+        try:
+            if provider == 'paystack':
+                data = create_paystack_payment(email, 4500, reference)
+                if not data.get("status"):
+                    raise Exception("Failed to create Paystack payment")
+                url = data['data']['authorization_url']
+                amount_display = "NGN 4,500"
+                
+            else:  # flutterwave
+                data = create_flutterwave_payment(email, 9.99, 'USD', reference)
+                if data.get("status") == "error":
+                    raise Exception("Failed to create Flutterwave payment")
+                url = data['data']['link']
+                amount_display = "$9.99"
+            
+            # Update user status
+            await self.update_user_status(user_id, "Pending", reference)
+            
+            # Update User model with provider
+            user = await self.get_user(user_id)
+            if user:
+                user.payment_provider = provider
+                await sync_to_async(user.save)()
+            
+            buttons = [
+                [InlineKeyboardButton(f"Pay {amount_display}", url=url)],
+                [InlineKeyboardButton("Verify Payment", callback_data=f"verify_{reference}")]
+            ]
+            
+            await query.edit_message_text(
+                f"💳 *Complete your payment*\n\n"
+                f"Amount: *{amount_display}*\n"
+                f"Provider: *{provider.title()}*\n\n"
+                f"Click the link below to pay securely.",
+                reply_markup=InlineKeyboardMarkup(buttons),
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except Exception as e:
+            logger.error(f"Payment creation error: {e}")
+            await query.edit_message_text("❌ Error creating payment link. Please try again later.")
 
     async def verify_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -728,13 +783,28 @@ class JobSearchBot:
         ref = query.data.split("_", 1)[1]
         user_id = str(update.effective_user.id)
         
+        # Auto-detect provider
+        if ref.startswith('PAYSTACK_'):
+            provider = 'paystack'
+        elif ref.startswith('FLUTTERWAVE_') or ref.startswith('FLW_'):
+            provider = 'flutterwave'
+        else:
+            provider = 'paystack'  # Default/Legacy
+        
         try:
-            result = verify_paystack_payment(ref)
-            if result.get("data", {}).get("status") == "success":
+            success = False
+            if provider == 'paystack':
+                result = verify_paystack_payment(ref)
+                success = result.get("data", {}).get("status") == "success"
+            else:
+                result = verify_flutterwave_payment(ref)
+                success = result.get("data", {}).get("status") == "successful"
+                
+            if success:
                 await self.update_user_status(user_id, "Paid", ref)
                 await query.edit_message_text("✅ *Payment Verified!* You are now a Premium user. Enjoy unlimited searches!", parse_mode=ParseMode.MARKDOWN)
             else:
-                await query.edit_message_text("Verification failed. Please try again later.")
+                await query.edit_message_text("Verification failed or still pending. Please try again later.")
         except Exception as e:
             logger.error(f"Payment verification error: {e}")
             await query.edit_message_text("An error occurred during verification.")
