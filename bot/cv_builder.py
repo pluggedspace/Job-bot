@@ -28,63 +28,87 @@ async def start_cv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['awards'] = []
     context.user_data['referees'] = []
 
-    await update.message.reply_text("Let's build your enhanced CV. What's your full name?")
+    await update.message.reply_text(
+        "👋 *Let's build your professional CV!* \n\n"
+        "I'll ask you a few questions to create a stunning resume.\n"
+        "First, what is your *Full Name*?",
+        parse_mode='Markdown'
+    )
     return NAME
 
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['name'] = update.message.text
-    await update.message.reply_text("Professional Title?")
+    await update.message.reply_text(
+        "Great! What is your *Current Professional Title*? (e.g., Software Engineer, Marketing Manager)",
+        parse_mode='Markdown'
+    )
     return TITLE
 
 
 async def get_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['title'] = update.message.text
-    await update.message.reply_text("Email?")
+    await update.message.reply_text("📧 What is your *Email Address*?", parse_mode='Markdown')
     return EMAIL
 
 
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['email'] = update.message.text
-    await update.message.reply_text("Phone Number?")
+    await update.message.reply_text("📱 What is your *Phone Number*?", parse_mode='Markdown')
     return PHONE
 
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['phone'] = update.message.text
-    await update.message.reply_text("City and Country of Residence?")
+    await update.message.reply_text("🌍 What is your *City and Country* of residence?", parse_mode='Markdown')
     return LOCATION
 
 
 async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['location'] = update.message.text
-    await update.message.reply_text("Professional links (LinkedIn, Portfolio, Website) comma-separated:")
+    await update.message.reply_text(
+        "🔗 Please provide your *Professional Links* (LinkedIn, Portfolio, etc.), separated by commas:",
+        parse_mode='Markdown'
+    )
     return LINKS
 
 
 async def get_links(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['links'] = [l.strip() for l in update.message.text.split(',')]
-    await update.message.reply_text("Brief professional summary:")
+    await update.message.reply_text(
+        "📝 Write a *Brief Professional Summary* (2-3 sentences about your experience and goals):",
+        parse_mode='Markdown'
+    )
     return SUMMARY
 
 
 async def get_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['summary'] = update.message.text
-    await update.message.reply_text("Enter an education entry (e.g., BSc in XYZ, Uni Name, Year):")
+    await update.message.reply_text(
+        "🎓 Let's add your *Education*.\n"
+        "Please enter an entry in this format:\n"
+        "_Degree, University, Year_",
+        parse_mode='Markdown'
+    )
     return EDUCATION
 
 
 async def get_education(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['education'].append(update.message.text)
-    await update.message.reply_text("Add another education entry? (yes/no)")
+    await update.message.reply_text("Do you want to add another education entry? (yes/no)")
     return ADD_EDUCATION
 
 
 async def add_education(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.lower() == 'yes':
-        await update.message.reply_text("Enter next education entry:")
+        await update.message.reply_text("Enter the next education entry:")
         return EDUCATION
-    await update.message.reply_text("Now enter a work experience:")
+    await update.message.reply_text(
+        "💼 Now, let's add your *Work Experience*.\n"
+        "Please enter your most recent role:\n"
+        "_Role, Company, Duration (e.g. 2020-Present)_",
+        parse_mode='Markdown'
+    )
     return EXPERIENCE
 
 
@@ -96,43 +120,69 @@ async def get_experience(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def add_experience(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.lower() == 'yes':
-        await update.message.reply_text("Enter next work experience:")
+        await update.message.reply_text("Enter the next work experience:")
         return EXPERIENCE
-    await update.message.reply_text("Any certifications? (e.g. PMP, AWS)")
+    await update.message.reply_text(
+        "📜 Do you have any *Certifications*? (e.g., PMP, AWS Certified)\n"
+        "Enter one, or type 'skip' if none.",
+        parse_mode='Markdown'
+    )
     return CERTIFICATIONS
 
 
 async def get_certifications(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['certifications'].append(update.message.text)
-    await update.message.reply_text("Add another certification? (yes/no)")
-    return ADD_CERTIFICATIONS
+    text = update.message.text
+    if text.lower() != 'skip':
+        context.user_data['certifications'].append(text)
+        await update.message.reply_text("Add another certification? (yes/no)")
+        return ADD_CERTIFICATIONS
+    
+    await update.message.reply_text("🗣️ What *Languages* do you speak? (comma-separated)", parse_mode='Markdown')
+    return LANGUAGES
 
 
 async def add_certifications(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.lower() == 'yes':
-        await update.message.reply_text("Enter next certification:")
+        await update.message.reply_text("Enter the next certification:")
         return CERTIFICATIONS
-    await update.message.reply_text("Languages spoken?")
+    await update.message.reply_text("🗣️ What *Languages* do you speak? (comma-separated)", parse_mode='Markdown')
     return LANGUAGES
 
 
 async def get_languages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['languages'] = [l.strip() for l in update.message.text.split(',')]
-    await update.message.reply_text("Notable award or achievement:")
+    await update.message.reply_text(
+        "🏆 Any *Awards or Achievements*?\n"
+        "Enter one, or type 'skip' if none.",
+        parse_mode='Markdown'
+    )
     return AWARDS
 
 
 async def get_awards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['awards'].append(update.message.text)
-    await update.message.reply_text("Add another award? (yes/no)")
-    return ADD_AWARDS
+    text = update.message.text
+    if text.lower() != 'skip':
+        context.user_data['awards'].append(text)
+        await update.message.reply_text("Add another award? (yes/no)")
+        return ADD_AWARDS
+    
+    await update.message.reply_text(
+        "👥 Please add a *Referee*:\n"
+        "_Name, Position, Contact Info_",
+        parse_mode='Markdown'
+    )
+    return REFEREES
 
 
 async def add_awards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.lower() == 'yes':
-        await update.message.reply_text("Enter next award:")
+        await update.message.reply_text("Enter the next award:")
         return AWARDS
-    await update.message.reply_text("Add a referee (Name, Position, Contact):")
+    await update.message.reply_text(
+        "👥 Please add a *Referee*:\n"
+        "_Name, Position, Contact Info_",
+        parse_mode='Markdown'
+    )
     return REFEREES
 
 
@@ -144,9 +194,13 @@ async def get_referees(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def add_referees(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.lower() == 'yes':
-        await update.message.reply_text("Enter next referee:")
+        await update.message.reply_text("Enter the next referee:")
         return REFEREES
-    await update.message.reply_text("List your skills (comma-separated):")
+    await update.message.reply_text(
+        "💡 Finally, list your *Key Skills* (comma-separated):\n"
+        "_e.g., Python, Project Management, SEO_",
+        parse_mode='Markdown'
+    )
     return SKILLS
 
 
@@ -160,7 +214,9 @@ async def get_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user.skills = d['skills']
     await sync_to_async(user.save)()
 
-    await update.message.reply_text("Generating your CV...")
+    await sync_to_async(user.save)()
+    
+    await update.message.reply_text("✨ *Generating your professional CV...* Please wait a moment.", parse_mode='Markdown')
 
     # Create CV Document
     doc = Document()
@@ -207,7 +263,11 @@ async def get_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     filename = f"{d['name'].replace(' ', '_')}_cv.docx"
     doc.save(filename)
     with open(filename, 'rb') as f:
-        await update.message.reply_document(f)
+        await update.message.reply_document(
+            document=f,
+            caption="✅ *Here is your new CV!* \nGood luck with your job search! 🚀",
+            parse_mode='Markdown'
+        )
     os.remove(filename)
 
     return ConversationHandler.END

@@ -5,11 +5,11 @@ from bot.services.user_context import get_user_context
 from bot.models import InterviewSession, InterviewResponse
 from asgiref.sync import sync_to_async
 
-# Initialize Mistral
+# Initialize AI
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 client = MistralClient(api_key=MISTRAL_API_KEY)
 
-def mistral_prompt(prompt: str) -> str:
+def ai_prompt(prompt: str) -> str:
     try:
         response = client.chat(
             model="mistral-small",
@@ -71,6 +71,14 @@ def last_question_was_follow_up(session):
     last = InterviewResponse.objects.filter(session=session).last()
     return last.is_follow_up if last else False
 
+@sync_to_async
+def cancel_session(user):
+    session = InterviewSession.objects.filter(user=user, is_complete=False).first()
+    if session:
+        session.delete()
+        return True
+    return False
+
 # ──────── Main Logic ──────── #
 async def handle_interview_practice(user, user_input=None):
     session = await get_active_session(user)
@@ -100,7 +108,7 @@ async def handle_interview_practice(user, user_input=None):
                 Now ask a relevant follow-up question to dig deeper into their answer.
                 Make it short, clear, and insightful. Only return the follow-up question.
                 """
-                follow_up = mistral_prompt(follow_up_prompt)
+                follow_up = ai_prompt(follow_up_prompt)
                 await create_question(session, follow_up, is_follow_up=True)
                 return f"🔁 *Follow-Up Question:*\n\n{follow_up.strip()}"
 
@@ -121,7 +129,7 @@ async def handle_interview_practice(user, user_input=None):
         - Weaknesses
         - Suggestions to improve
         """
-        review = mistral_prompt(review_prompt)
+        review = ai_prompt(review_prompt)
         return f"✅ **Mock Interview Complete!**\n\n📝 *Your Review:*\n\n{review}"
 
     # Generate a new unique main question
@@ -137,7 +145,7 @@ async def handle_interview_practice(user, user_input=None):
     Ask a new, unique, and insightful interview question (question {answered_main + 1} of {session.total_questions}).
     Do NOT repeat topics. Only return the question.
     """
-    question = mistral_prompt(main_prompt)
+    question = ai_prompt(main_prompt)
     await create_question(session, question, is_follow_up=False)
 
     return f"🎤 *Question {answered_main + 1} of {session.total_questions}:*\n\n{question.strip()}"

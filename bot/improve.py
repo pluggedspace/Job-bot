@@ -5,17 +5,17 @@ from bot.models import User
 from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 
-# Load Mistral API Key securely
+# Load AI API Key securely
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 if not MISTRAL_API_KEY:
     raise ValueError("Missing MISTRAL_API_KEY environment variable")
 
-# Initialize Mistral Client
+# Initialize AI Client
 client = MistralClient(api_key=MISTRAL_API_KEY)
 MODEL = "mistral-tiny"  # You can change to mistral-small or mistral-medium
 
 
-def call_mistral(prompt: str, system_prompt: str = "You are a helpful assistant.") -> str:
+def call_ai(prompt: str, system_prompt: str = "You are a helpful assistant.") -> str:
     """
     Sends a prompt to Mistral and returns the generated response text.
     """
@@ -93,7 +93,7 @@ Write a concise letter (max 250 words) that includes:
     """
 
     # Generate letter
-    letter = call_mistral(prompt)
+    letter = call_ai(prompt)
 
     return {
         "error": False,
@@ -146,7 +146,7 @@ User Details:
     """
 
     # Generate review
-    review = call_mistral(prompt)
+    review = call_ai(prompt)
 
     return {
         "error": False,

@@ -12,8 +12,9 @@ from telegram.ext import (
 from django.conf import settings
 from asgiref.sync import sync_to_async
 from bot.models import User, Job, Alert, InterviewSession, InterviewResponse
-from bot.utils import get_jobs, create_paystack_payment, verify_paystack_payment, get_jobs_arbeitnow
+from bot.utils import create_paystack_payment, verify_paystack_payment
 from bot.decorators import subscription_required
+from bot.functions.jobs import get_jobs, get_jobs_arbeitnow, get_all_jobs
 from telegram.constants import ParseMode
 from telegram.constants import UpdateType
 from bot.cv_builder import get_cv_handler
@@ -22,12 +23,15 @@ import asyncio
 from bot.services.career_path import get_career_path_data, resolve_career_path
 from bot.services.upskill import get_upskill_plan
 from bot.improve import generate_cover_letter, review_cv
-from bot.services.interview import handle_interview_practice
+from bot.services.interview import handle_interview_practice, cancel_session, get_active_session
 
 logger = logging.getLogger(__name__)
 
 # Global constants
+# Global constants
 FREE_SEARCH_LIMIT = 10
+FREE_ALERT_LIMIT = 1
+PREMIUM_ALERT_LIMIT = 5
 
 class JobSearchBot:
     def __init__(self):
@@ -53,12 +57,34 @@ class JobSearchBot:
         self.application.add_handler(CommandHandler("cv_review", self.cv_review_handler))
         self.application.add_handler(CommandHandler("practice", self.interview_practice_handler))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.interview_practice_handler))
+        
+        # Account linking commands
+        self.application.add_handler(CommandHandler("link", self.link_account_command))
+        self.application.add_handler(CommandHandler("unlink", self.unlink_account_command))
+        self.application.add_handler(CommandHandler("account", self.account_info_command))
 
         # Callback handlers
         self.application.add_handler(CallbackQueryHandler(self.verify_payment, pattern=r"^verify_"))
         self.application.add_handler(CallbackQueryHandler(self.show_job_details, pattern=r"^view_")) 
+        self.application.add_handler(CallbackQueryHandler(self.save_job_callback, pattern=r"^save_"))
         self.application.add_handler(CallbackQueryHandler(self.back_to_results, pattern=r"^back_to_results$"))
         self.application.add_handler(CallbackQueryHandler(self.toggle_alert, pattern=r"^alert_"))
+
+        # Helper for interview lock
+    async def check_interview_lock(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """Returns True if user is locked in an interview"""
+        user = await self.get_user_or_create(update.effective_user)
+        active_session = await get_active_session(user)
+        
+        if active_session:
+            await update.message.reply_text(
+                "⚠️ *Active Interview in Progress*\n\n"
+                "You cannot use other commands right now.\n"
+                "Type `exit` or `stop` to end the interview.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return True
+        return False
 
     # Database helper methods
     @staticmethod
@@ -88,7 +114,12 @@ class JobSearchBot:
         return user
         
     async def cv_review_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_interview_lock(update, context): return
         user = await self.get_user_or_create(update.effective_user)
+
+        if user.subscription_status != 'Paid':
+            await self.send_upgrade_message(update, "CV Review")
+            return
 
         await update.message.reply_text("🔍 Reviewing your CV, one moment...")
 
@@ -106,6 +137,7 @@ class JobSearchBot:
             )
 
     async def coverletter_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_interview_lock(update, context): return
         user = await self.get_user_or_create(update.effective_user)
         message = update.message.text
 
@@ -116,6 +148,10 @@ class JobSearchBot:
             company = parts[1].strip() if len(parts) > 1 else None
         except Exception:
             await update.message.reply_text("❗ Usage: `/coverletter Job Title | Company Name`", parse_mode=ParseMode.MARKDOWN)
+            return
+
+        if user.subscription_status != 'Paid':
+            await self.send_upgrade_message(update, "Cover Letter Generator")
             return
 
         # Generate the letter
@@ -138,6 +174,26 @@ class JobSearchBot:
     async def interview_practice_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = await self.get_user_or_create(update.effective_user)
         user_input = update.message.text.strip()
+
+        # Handle exit/stop
+        if user_input.lower() in ['exit', 'stop', '/stop']:
+            if await cancel_session(user):
+                await update.message.reply_text("🛑 Interview cancelled. You can now use other commands.")
+                return
+            else:
+                if user_input.lower() == '/stop': # Allow /stop to work even if no session
+                     await update.message.reply_text("No active interview to stop.")
+                     return
+
+        # If it's the practice command, proceed. If it's another command, ignore.
+        if user_input.startswith('/') and not user_input.lower().startswith("/practice"):
+            return
+            
+        # If not starting and no active session, ignore (unless it's /practice)
+        if not user_input.lower().startswith("/practice"):
+             active_session = await get_active_session(user)
+             if not active_session:
+                 return
 
         # If the message starts with /practice, treat as a start
         is_start = user_input.lower().startswith("/practice")
@@ -241,36 +297,32 @@ class JobSearchBot:
             await sync_to_async(user.save)()
         
         await update.message.reply_text(
-            "👋 Welcome to the Job Search Bot!\n\n"
-            "🔍 <b>Search Jobs</b>\n"
-            "Use /findjobs to search for jobs\n"
-            "Example: /findjobs python developer remote\n\n"
-            "📝 <b>Build Your CV</b>\n"
-            "Use /build_cv to create a professional CV\n"
-            "Use /view_cv to view CV\n\n"
-            "🔔 <b>Job Alerts</b>\n"
-            "Use /setalert to create job alerts\n"
-            "Use /myalerts to manage your alerts\n\n"
-            "📊 <b>Career Development</b>\n"
-            "• /careerpath - Explore career progression\n"
-            "• /practice - Interview practice\n"
-            "• /upskill - Get personalized learning plan\n\n"
-            "✍️ <b>Application Tools</b>\n"
-            "• /coverletter Job Title | Company – Generate a tailored cover letter\n"
-            "• /cv_review – Get suggestions to improve your CV\n\n"
-            "💎 <b>Premium Features</b>\n"
-            "• Unlimited job searches\n"
-            "• Up to 5 active job alerts\n"
-            "• View all search results\n"
-            "Use /subscribe to upgrade\n\n"
-            "📊 <b>Other Commands</b>\n"
-            "• /quota - Check your search limit\n"
-            "• /history - View saved jobs\n\n"
-            f"Free users get {FREE_SEARCH_LIMIT} searches per month.",
-            parse_mode=ParseMode.HTML
+            "👋 *Welcome to Job Bot!* \n"
+            "Your AI-powered career assistant.\n\n"
+            "🔍 *Job Search*\n"
+            "• `/findjobs <keywords>` - Search for jobs (e.g., `/findjobs python remote`)\n"
+            "• `/history` - View your saved jobs\n\n"
+            "📝 *CV & Application*\n"
+            "• `/build_cv` - Create a professional CV\n"
+            "• `/view_cv` - View your current CV\n"
+            "• `/cv_review` - Get AI feedback on your CV\n"
+            "• `/coverletter <Job> | <Company>` - Generate a cover letter\n\n"
+            "🔔 *Alerts*\n"
+            "• `/setalert <keyword>` - Create a job alert\n"
+            "• `/myalerts` - Manage your alerts\n\n"
+            "🚀 *Career Growth*\n"
+            "• `/careerpath <role>` - Explore career progression\n"
+            "• `/upskill <role>` - Get a personalized learning plan\n"
+            "• `/practice` - Start a mock interview\n\n"
+            "💎 *Premium*\n"
+            "• `/subscribe` - Get unlimited searches & more alerts\n"
+            "• `/quota` - Check your free search limit\n\n"
+            f"ℹ️ _Free users get {FREE_SEARCH_LIMIT} searches per month and {FREE_ALERT_LIMIT} alert._",
+            parse_mode=ParseMode.MARKDOWN
         )
 
     async def upskill_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_interview_lock(update, context): return
         user = update.effective_user
 
         try:
@@ -308,6 +360,7 @@ class JobSearchBot:
         await update.message.reply_markdown(msg, disable_web_page_preview=True)
 
     async def careerpath_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_interview_lock(update, context): return
         user_input = ' '.join(context.args) if context.args else None
         try:
             user = await sync_to_async(User.objects.get)(user_id=str(update.effective_user.id))
@@ -340,29 +393,120 @@ class JobSearchBot:
         job = self.job_cache.get(job_id)
         
         if not job:
-            await query.edit_message_text("Job details no longer available.")
+            await query.edit_message_text("❌ Job details no longer available.")
             return
         
-        message = (
-            f"<b>{job.get('job_title', 'N/A')}</b>\n"
-            f"<b>Company:</b> {job.get('employer_name', 'Unknown')}\n"
-            f"<b>Location:</b> {job.get('job_city', 'N/A')}, {job.get('job_country', 'N/A')}\n"
-            f"<b>Type:</b> {job.get('job_employment_type', 'N/A')}\n"
-            f"<b>Posted:</b> {job.get('job_posted_at', 'N/A')}\n\n"
-        )
+        # Extract job information
+        title = job.get('job_title', 'N/A')
+        company = job.get('employer_name', 'Unknown')
+        location = job.get('job_city', 'N/A')
+        country = job.get('job_country', 'N/A')
+        job_type = job.get('job_employment_type', 'N/A')
+        posted = job.get('job_posted_at', 'N/A')
+        is_remote = job.get('remote', False)
         
+        # Build header with title and company
+        message = f"💼 <b>{title}</b>\n\n"
+        
+        # Company and location section
+        message += f"🏢 <b>Company:</b> {company}\n"
+        
+        # Location with remote badge
+        if is_remote:
+            message += f"📍 <b>Location:</b> {location}, {country} 🌐 <i>Remote</i>\n"
+        else:
+            message += f"📍 <b>Location:</b> {location}, {country}\n"
+        
+        # Employment type
+        message += f"⏰ <b>Type:</b> {job_type}\n"
+        
+        # Posted date
+        if posted and posted != 'N/A':
+            # Try to format the date nicely
+            try:
+                from datetime import datetime
+                if isinstance(posted, str):
+                    # Handle ISO format or timestamp
+                    if 'T' in posted:
+                        dt = datetime.fromisoformat(posted.replace('Z', '+00:00'))
+                        posted = dt.strftime('%B %d, %Y')
+                message += f"📅 <b>Posted:</b> {posted}\n"
+            except:
+                message += f"📅 <b>Posted:</b> {posted}\n"
+        
+        # Salary information (if available)
+        salary_min = job.get('job_min_salary')
+        salary_max = job.get('job_max_salary')
+        salary_currency = job.get('job_salary_currency', 'USD')
+        
+        if salary_min or salary_max:
+            message += "\n💰 <b>Salary:</b> "
+            if salary_min and salary_max:
+                message += f"{salary_currency} {salary_min:,} - {salary_max:,}\n"
+            elif salary_min:
+                message += f"{salary_currency} {salary_min:,}+\n"
+            elif salary_max:
+                message += f"Up to {salary_currency} {salary_max:,}\n"
+        
+        # Required skills/qualifications (if available)
+        required_skills = job.get('job_required_skills')
+        if required_skills:
+            message += f"\n✅ <b>Required Skills:</b>\n"
+            if isinstance(required_skills, list):
+                for skill in required_skills[:5]:  # Limit to 5 skills
+                    message += f"  • {skill}\n"
+            else:
+                message += f"  {required_skills}\n"
+        
+        # Description section
         description = job.get('job_description', '')
         if description:
-            if len(description) > 1000:
-                description = description[:1000] + "..."
-            message += f"<b>Description:</b>\n{description}\n\n"
+            message += f"\n📋 <b>Description:</b>\n"
+            # Smart truncation - try to break at sentence or word boundary
+            max_length = 800
+            if len(description) > max_length:
+                truncated = description[:max_length]
+                # Try to break at last period or space
+                last_period = truncated.rfind('.')
+                last_space = truncated.rfind(' ')
+                
+                if last_period > max_length - 100:
+                    description = truncated[:last_period + 1] + "..."
+                elif last_space > max_length - 50:
+                    description = truncated[:last_space] + "..."
+                else:
+                    description = truncated + "..."
+            
+            message += f"{description}\n"
         
-        apply_url = job.get('job_apply_link')
+        # Benefits (if available)
+        benefits = job.get('job_benefits')
+        if benefits:
+            message += f"\n🎁 <b>Benefits:</b>\n"
+            if isinstance(benefits, list):
+                for benefit in benefits[:5]:
+                    message += f"  • {benefit}\n"
+            else:
+                message += f"  {benefits}\n"
+        
+        # Application deadline (if available)
+        deadline = job.get('job_offer_expiration_datetime_utc')
+        if deadline:
+            message += f"\n⏳ <b>Application Deadline:</b> {deadline}\n"
+        
+        # Build action buttons
         buttons = []
-        if apply_url:
-            buttons.append([InlineKeyboardButton("Apply Now", url=apply_url)])
         
-        buttons.append([InlineKeyboardButton("Back to Results", callback_data="back_to_results")])
+        # Apply button
+        apply_url = job.get('job_apply_link')
+        if apply_url:
+            buttons.append([InlineKeyboardButton("🚀 Apply Now", url=apply_url)])
+        
+        # Save job button (always show - will handle if already saved)
+        buttons.append([InlineKeyboardButton("💾 Save Job", callback_data=f"save_{job_id}")])
+        
+        # Back button
+        buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data="back_to_results")])
         
         await query.edit_message_text(
             text=message,
@@ -370,15 +514,45 @@ class JobSearchBot:
             parse_mode=ParseMode.HTML
         )
 
+    async def save_job_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle save job button click"""
+        query = update.callback_query
+        
+        job_id = query.data.split("_", 1)[1]
+        user_id = str(update.effective_user.id)
+        
+        job = self.job_cache.get(job_id)
+        if not job:
+            await query.answer("❌ Job details no longer available.", show_alert=True)
+            return
+        
+        title = job.get('job_title', 'N/A')
+        company = job.get('employer_name', 'Unknown')
+        
+        try:
+            # Check if already saved
+            existing = await sync_to_async(Job.objects.filter)(user_id=user_id, job_id=job_id)
+            if await sync_to_async(existing.exists)():
+                await query.answer("✅ Job already saved!", show_alert=True)
+            else:
+                await self.save_job(user_id, job_id, title, company)
+                await query.answer("💾 Job saved successfully!", show_alert=True)
+        except Exception as e:
+            logger.error(f"Error saving job: {e}")
+            await query.answer("❌ Failed to save job. Please try again.", show_alert=True)
+
     async def find_jobs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_interview_lock(update, context): return
         user_id = str(update.effective_user.id)
         if not context.args:
             await update.message.reply_text(
-                "Please provide search keywords.\n\n"
-                "You can also use filters:\n"
-                "- /findjobs python remote\n"
-                "- /findjobs developer full-time\n"
-                "- /findjobs marketing entry-level"
+                "🔍 *Job Search*\n\n"
+                "Please provide keywords to search.\n"
+                "Examples:\n"
+                "• `/findjobs python remote`\n"
+                "• `/findjobs marketing entry-level`\n"
+                "• `/findjobs manager full-time`",
+                parse_mode=ParseMode.MARKDOWN
             )
             return
         
@@ -413,11 +587,12 @@ class JobSearchBot:
         jobs = get_all_jobs(query, filters)
         if not jobs:
             await update.message.reply_text(
-                "No jobs found for your search criteria.\n\n"
+                "❌ *No jobs found matching your criteria.*\n\n"
                 "Try:\n"
-                "- Using different keywords\n"
-                "- Removing filters\n"
-                "- Checking your spelling"
+                "• Using broader keywords\n"
+                "• Removing some filters\n"
+                "• Checking for typos",
+                parse_mode=ParseMode.MARKDOWN
             )
             return
         
@@ -425,31 +600,72 @@ class JobSearchBot:
             job_id = job.get("job_id", str(hash(job.get('job_title', '') + job.get('employer_name', ''))))
             self.job_cache[job_id] = job
         
-        message = f"Found {len(jobs)} jobs matching your search:\n\n"
-        await update.message.reply_text(message)
+        message = f"🔍 Found *{len(jobs)}* jobs matching your search:\n\n"
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
         
-        for job in jobs[:5]:
+        # Determine how many jobs to show
+        display_limit = len(jobs) if is_premium else 5
+        jobs_to_show = jobs[:display_limit]
+
+        for job in jobs_to_show:
             title = job.get('job_title', 'N/A')
             company = job.get('employer_name', 'Unknown')
             location = f"{job.get('job_city', 'N/A')}, {job.get('job_country', 'N/A')}"
             job_type = job.get('job_employment_type', 'N/A')
             job_id = job.get("job_id", str(hash(title + company)))
+            is_remote = job.get('remote', False)
+            posted = job.get('job_posted_at', 'N/A')
+            
+            # Format posted date
+            posted_text = ""
+            if posted and posted != 'N/A':
+                try:
+                    from datetime import datetime
+                    if isinstance(posted, str) and 'T' in posted:
+                        dt = datetime.fromisoformat(posted.replace('Z', '+00:00'))
+                        # Show relative time if recent
+                        days_ago = (datetime.now(dt.tzinfo) - dt).days
+                        if days_ago == 0:
+                            posted_text = "📅 Today"
+                        elif days_ago == 1:
+                            posted_text = "📅 Yesterday"
+                        elif days_ago < 7:
+                            posted_text = f"📅 {days_ago} days ago"
+                        else:
+                            posted_text = f"📅 {dt.strftime('%b %d')}"
+                    else:
+                        posted_text = f"📅 {posted}"
+                except:
+                    posted_text = f"📅 {posted}"
             
             await self.save_job(user_id, job_id, title, company)
             
-            keyboard = [[InlineKeyboardButton("View Details", callback_data=f"view_{job_id}")]]
+            # Build job card message
+            job_message = f"💼 <b>{title}</b>\n"
+            job_message += f"🏢 {company}\n"
+            
+            # Location with remote badge
+            if is_remote:
+                job_message += f"📍 {location} 🌐 <i>Remote</i>\n"
+            else:
+                job_message += f"📍 {location}\n"
+            
+            job_message += f"⏰ {job_type}"
+            
+            if posted_text:
+                job_message += f" • {posted_text}"
+            
+            keyboard = [[InlineKeyboardButton("👁️ View Details", callback_data=f"view_{job_id}")]]
             await update.message.reply_text(
-                f"<b>{title}</b>\n"
-                f"Company: {company}\n"
-                f"Location: {location}\n"
-                f"Type: {job_type}",
+                job_message,
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.HTML
             )
         
-        if len(jobs) > 5:
+        if not is_premium and len(jobs) > 5:
             await update.message.reply_text(
-                f"Showing first 5 results. Upgrade to premium to see all {len(jobs)} jobs!"
+                f"⚠️ Showing top 5 results. *Upgrade to Premium* to see all {len(jobs)} jobs!",
+                parse_mode=ParseMode.MARKDOWN
             )
 
     async def back_to_results(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -486,7 +702,7 @@ class JobSearchBot:
             await update.message.reply_text("Please register first with /start")
             return
         
-        data = create_paystack_payment(email, 750, reference)
+        data = create_paystack_payment(email, 4500, reference)
         
         if not data.get("status"):
             await update.message.reply_text("Error creating payment link.")
@@ -500,8 +716,10 @@ class JobSearchBot:
             [InlineKeyboardButton("Verify", callback_data=f"verify_{reference}")]
         ]
         await update.message.reply_text(
-            "Complete your payment:",
-            reply_markup=InlineKeyboardMarkup(buttons)
+            "💳 *Complete your payment*\n"
+            "Click the link below to pay securely via Paystack.",
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=ParseMode.MARKDOWN
         )
 
     async def verify_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -514,7 +732,7 @@ class JobSearchBot:
             result = verify_paystack_payment(ref)
             if result.get("data", {}).get("status") == "success":
                 await self.update_user_status(user_id, "Paid", ref)
-                await query.edit_message_text("Payment verified. You are now a premium user.")
+                await query.edit_message_text("✅ *Payment Verified!* You are now a Premium user. Enjoy unlimited searches!", parse_mode=ParseMode.MARKDOWN)
             else:
                 await query.edit_message_text("Verification failed. Please try again later.")
         except Exception as e:
@@ -528,7 +746,7 @@ class JobSearchBot:
 
         # Input validation
         if not context.args:
-            await update.message.reply_text("Usage: /setalert keyword")
+            await update.message.reply_text("❗ Usage: `/setalert <keyword>`", parse_mode=ParseMode.MARKDOWN)
             return
 
         query = " ".join(context.args).strip()
@@ -554,8 +772,14 @@ class JobSearchBot:
             active_count = await sync_to_async(
                 Alert.objects.filter(user=user, active=True).count
             )()
-            if active_count >= 5:
-                await update.message.reply_text("❌ Max 5 alerts allowed")
+
+            limit = PREMIUM_ALERT_LIMIT if user.subscription_status == 'Paid' else FREE_ALERT_LIMIT
+            
+            if active_count >= limit:
+                msg = f"❌ You've reached your limit of {limit} alert(s)."
+                if user.subscription_status != 'Paid':
+                    msg += "\nUse /subscribe to get up to 5 alerts!"
+                await update.message.reply_text(msg)
                 return
 
             # 4. Create and verify alert
@@ -565,10 +789,11 @@ class JobSearchBot:
 
             # SUCCESS - send confirmation
             await update.message.reply_text(
-                f"✅ Alert saved successfully!\n\n"
-                f"ID: {alert.id}\n"
-                f"Query: {query}\n\n"
-                "You'll be notified of new matching jobs."
+                f"✅ *Alert Saved!*\n\n"
+                f"🆔 ID: `{alert.id}`\n"
+                f"🔍 Query: `{query}`\n\n"
+                "You'll be notified when new jobs match this query.",
+                parse_mode=ParseMode.MARKDOWN
             )
             logger.info(f"ALERT CONFIRMED SAVED: {alert.id}")
 
@@ -592,7 +817,7 @@ class JobSearchBot:
             return
         
         remaining = max(0, FREE_SEARCH_LIMIT - user.search_count)
-        await update.message.reply_text(f"You have {remaining} free searches remaining today.")
+        await update.message.reply_text(f"📊 You have *{remaining}* free searches remaining today.", parse_mode=ParseMode.MARKDOWN)
 
     async def history(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = str(update.effective_user.id)
@@ -627,7 +852,7 @@ class JobSearchBot:
             result = verify_paystack_payment(ref)
             if result.get("data", {}).get("status") == "success":
                 await self.update_user_status(user_id, "Paid", ref)
-                await update.message.reply_text("Payment verified successfully. You are now a premium user.")
+                await update.message.reply_text("✅ Payment verified successfully! You are now a *Premium* user.", parse_mode=ParseMode.MARKDOWN)
             else:
                 await update.message.reply_text("Verification failed or still pending. Please try again later.")
         except Exception as e:
@@ -679,8 +904,9 @@ class JobSearchBot:
         alerts = await self.get_user_alerts(user_id)
         if not alerts:
             await update.message.reply_text(
-                "You don't have any job alerts set up.\n\n"
-                "Use /setalert to create your first alert!"
+                "🔕 You don't have any job alerts set up.\n\n"
+                "Use `/setalert <keyword>` to create your first alert!",
+                parse_mode=ParseMode.MARKDOWN
             )
             return
     
@@ -688,10 +914,10 @@ class JobSearchBot:
         for alert in alerts:
             status = "✅ Active" if alert.active else "❌ Inactive"
             message += (
-                f"ID: {alert.id}\n"
-                f"Query: {alert.query}\n"
+                f"🆔 ID: `{alert.id}`\n"
+                f"🔍 Query: `{alert.query}`\n"
                 f"Status: {status}\n"
-                f"Created: {alert.created_at.strftime('%Y-%m-%d')}\n\n"
+                f"📅 Created: {alert.created_at.strftime('%Y-%m-%d')}\n\n"
             )
     
         keyboard = [
@@ -720,15 +946,159 @@ class JobSearchBot:
         
         status = "activated" if alert.active else "deactivated"
         await query.edit_message_text(
-            f"Alert for '{alert.query}' has been {status}.\n\n"
-            "Use /myalerts to manage your alerts."
+            f"Alert for '{alert.query}' has been *{status}*.\n\n"
+            "Use /myalerts to manage your alerts.",
+            parse_mode=ParseMode.MARKDOWN
         )
+
+    async def send_upgrade_message(self, update: Update, feature_name: str):
+        await update.message.reply_text(
+            f"💎 *Premium Feature Locked*\n\n"
+            f"The *{feature_name}* is available only to Premium users.\n\n"
+            "Upgrade now to access:\n"
+            "✅ Unlimited Job Searches\n"
+            "✅ 5 Active Job Alerts\n"
+            "✅ CV Review & Cover Letter Generator\n\n"
+            "Use `/subscribe <email>` to upgrade!",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    async def link_account_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Generate a code to link Telegram account to web profile"""
+        if await self.check_interview_lock(update, context): return
+        
+        user_id = str(update.effective_user.id)
+        username = update.effective_user.username
+        
+        # First try to find existing user by user_id or telegram_id
+        platform_user = await sync_to_async(
+            User.objects.select_related('tenant_user__tenant').filter(user_id=user_id).first
+        )()
+        
+        if not platform_user:
+            # Try by telegram_id
+            platform_user = await sync_to_async(
+                User.objects.select_related('tenant_user__tenant').filter(telegram_id=user_id).first
+            )()
+        
+        if not platform_user:
+            # Create new user
+            platform_user = await sync_to_async(User.objects.create)(
+                user_id=user_id,
+                telegram_id=user_id,
+                username=username,
+                platform_type='telegram'
+            )
+        else:
+            # Update telegram_id if not set
+            if not platform_user.telegram_id:
+                platform_user.telegram_id = user_id
+                platform_user.username = username
+                await sync_to_async(platform_user.save)()
+        
+        # Check if already linked
+        if platform_user.tenant_user:
+            await update.message.reply_text(
+                f"✅ *Account Already Linked*\\n\\n"
+                f"Your Telegram account is linked to:\\n"
+                f"📧 {platform_user.tenant_user.email}\\n"
+                f"🏢 {platform_user.tenant_user.tenant.name}\\n\\n"
+                f"Use /unlink to disconnect.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        
+        # Generate link code
+        code = await sync_to_async(platform_user.generate_link_code)()
+        
+        await update.message.reply_text(
+            f"🔗 *Link Your Account*\\n\\n"
+            f"Your linking code: `{code}`\\n\\n"
+            f"⏰ This code expires in 15 minutes.\\n\\n"
+            f"*To link your account:*\\n"
+            f"1. Go to https://job.pluggedspace.org/settings/link\\n"
+            f"2. Enter this code\\n"
+            f"3. Your Telegram and web accounts will be linked!\\n\\n"
+            f"*Benefits:*\\n"
+            f"✅ Unified job alerts across platforms\\n"
+            f"✅ Shared subscription status\\n"
+            f"✅ Access your data from web or Telegram\\n"
+            f"✅ Sync your CV and saved jobs",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    async def unlink_account_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Unlink Telegram account from web profile"""
+        if await self.check_interview_lock(update, context): return
+        
+        user_id = str(update.effective_user.id)
+        
+        try:
+            platform_user = await sync_to_async(User.objects.select_related('tenant_user').get)(telegram_id=user_id)
+        except User.DoesNotExist:
+            await update.message.reply_text(
+                "❌ No Telegram account found. Use /start to register first."
+            )
+            return
+        
+        if not platform_user.tenant_user:
+            await update.message.reply_text(
+                "ℹ️ Your Telegram account is not linked to any web profile.\\n\\n"
+                "Use /link to link your account.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        
+        # Store email for confirmation message
+        email = platform_user.tenant_user.email
+        
+        # Unlink
+        platform_user.tenant_user = None
+        await sync_to_async(platform_user.save)()
+        
+        await update.message.reply_text(
+            f"✅ *Account Unlinked*\\n\\n"
+            f"Your Telegram account has been disconnected from:\\n"
+            f"📧 {email}\\n\\n"
+            f"You can link to a different account anytime using /link",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    async def account_info_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show account information and linking status"""
+        if await self.check_interview_lock(update, context): return
+        
+        user_id = str(update.effective_user.id)
+        
+        try:
+            platform_user = await sync_to_async(User.objects.select_related('tenant_user__tenant').get)(telegram_id=user_id)
+        except User.DoesNotExist:
+            await update.message.reply_text(
+                "❌ No account found. Use /start to register first."
+            )
+            return
+        
+        # Build account info message
+        message = f"👤 *Your Account Info*\\n\\n"
+        message += f"*Telegram:*\\n"
+        message += f"• Username: @{platform_user.username or 'Not set'}\\n"
+        message += f"• User ID: `{platform_user.telegram_id}`\\n"
+        message += f"• Subscription: {platform_user.subscription_status}\\n"
+        message += f"• Searches: {platform_user.search_count}/{FREE_SEARCH_LIMIT}\\n\\n"
+        
+        if platform_user.tenant_user:
+            message += f"*🔗 Linked Web Account:*\\n"
+            message += f"• Email: {platform_user.tenant_user.email}\\n"
+            message += f"• Name: {platform_user.tenant_user.full_name or 'Not set'}\\n"
+            message += f"• Organization: {platform_user.tenant_user.tenant.name}\\n"
+            message += f"• Role: {platform_user.tenant_user.role.title()}\\n\\n"
+            message += f"Use /unlink to disconnect"
+        else:
+            message += f"*🔗 Account Linking:*\\n"
+            message += f"Not linked to any web account\\n\\n"
+            message += f"Use /link to link your account"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
 
     def run(self):
         self.application.run_polling()
-
-def get_all_jobs(query: str, filters: dict = None) -> list:
-    jobs = []
-    jobs += get_jobs(query, filters)
-    jobs += get_jobs_arbeitnow(query, filters)
-    return jobs

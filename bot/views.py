@@ -42,7 +42,7 @@ def robots_txt(request):
     lines = [
         "User-Agent: *",
         "Disallow:",
-        "Sitemap: https://job.pluggedspace.org/sitemap.xml",
+        "Sitemap: https://api.pluggedspace.org/job/sitemap.xml",
     ]
     return HttpResponse("\n".join(lines), content_type="text/plain")
 

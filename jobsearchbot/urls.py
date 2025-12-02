@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from django.views.generic import TemplateView
+
 from django.contrib.sitemaps.views import sitemap
 from bot.views import telegram_webhook, paystack_callback
 from bot.sitemaps import StaticViewSitemap
@@ -12,6 +12,7 @@ sitemaps_dict = {
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/', include('bot.api.urls')),  # API endpoints
     path('webhook/', telegram_webhook, name='telegram_webhook'),
     path('callback/', paystack_callback, name='paystack_callback'),
 
@@ -21,6 +22,5 @@ urlpatterns = [
     # ✅ Robots.txt
     path('robots.txt', robots_txt, name='robots_txt'),
 
-    # ✅ Home page
-    path('', TemplateView.as_view(template_name='index.html'), name='home'),
+
 ]

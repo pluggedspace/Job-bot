@@ -10,11 +10,11 @@ from mistralai.models.chat_completion import ChatMessage
 
 
 def resolve_career_path(job_title: str):
-    # 1. Try Mistral AI
-    mistral_data = fetch_career_path_mistral(job_title)
-    if mistral_data and any([mistral_data.get("broader"), mistral_data.get("narrower"), mistral_data.get("related")]):
-        mistral_data["input_title"] = job_title
-        return mistral_data, 'MISTRAL'
+    # 1. Try AI
+    ai_data = fetch_career_path_ai(job_title)
+    if ai_data and any([ai_data.get("broader"), ai_data.get("narrower"), ai_data.get("related")]):
+        ai_data["input_title"] = job_title
+        return ai_data, 'AI'
 
     # 2. Fallback to ONET
     onet_data = fetch_career_path_onet(job_title)
@@ -31,7 +31,7 @@ def resolve_career_path(job_title: str):
     return {"error": "No career path data available.", "input_title": job_title}, None
 
 
-def fetch_career_path_mistral(job_title):
+def fetch_career_path_ai(job_title):
     api_key = os.getenv("MISTRAL_API_KEY")
     if not api_key:
         print("❌ No MISTRAL_API_KEY found.")
@@ -60,7 +60,7 @@ def fetch_career_path_mistral(job_title):
         return json.loads(content)
 
     except Exception as e:
-        print("❌ Mistral career path error:", e)
+        print("❌ AI career path error:", e)
         return None
 
 
