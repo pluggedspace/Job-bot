@@ -8,15 +8,33 @@ from bot.models import User, TenantUser, Job, Alert
 class TenantUserSerializer(serializers.ModelSerializer):
     """Serializer for TenantUser (web users)"""
     tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+    is_premium = serializers.SerializerMethodField()
     
     class Meta:
         model = TenantUser
         fields = [
             'id', 'user_id', 'email', 'full_name', 'role',
-            'tenant_name', 'subscription_status', 'search_count',
+            'tenant_name', 'subscription_status', 'is_premium', 'search_count',
             'current_job_title', 'skills', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'user_id', 'created_at', 'updated_at']
+
+    def get_is_premium(self, obj):
+        web_paid = obj.subscription_status == 'Paid'
+        linked_paid = obj.platform_accounts.filter(subscription_status='Paid').exists()
+        is_premium = web_paid or linked_paid
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"DEBUG: Serializer checking premium for {obj.email}: web={web_paid}, linked={linked_paid}, final={is_premium}")
+        
+        return is_premium
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('is_premium'):
+            data['subscription_status'] = 'Paid'
+        return data
 
 
 class PlatformUserSerializer(serializers.ModelSerializer):

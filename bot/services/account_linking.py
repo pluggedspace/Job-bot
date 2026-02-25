@@ -60,9 +60,28 @@ class AccountLinkingService:
             # Link the accounts
             platform_user.link_to_tenant_user(tenant_user)
             
+            # Synchronize data from platform to web (if platform is Paid/has data)
+            # This ensures "real data" from the bot is reflected on the web dashboard
+            if platform_user.subscription_status == 'Paid':
+                tenant_user.subscription_status = 'Paid'
+            
+            # Sync counts and profile if web is empty
+            tenant_user.search_count = max(tenant_user.search_count, platform_user.search_count)
+            
+            if not tenant_user.cv_data and platform_user.cv_data:
+                tenant_user.cv_data = platform_user.cv_data
+            
+            if not tenant_user.skills and platform_user.skills:
+                tenant_user.skills = platform_user.skills
+            
+            if not tenant_user.current_job_title and platform_user.current_job_title:
+                tenant_user.current_job_title = platform_user.current_job_title
+                
+            tenant_user.save()
+            
             logger.info(
                 f"Linked {platform_user.platform_type} account {platform_user.user_id} "
-                f"to TenantUser {tenant_user.email}"
+                f"to TenantUser {tenant_user.email} and synchronized data"
             )
             
             return True, f"Successfully linked {platform_user.platform_type} account!", platform_user
@@ -132,14 +151,51 @@ class AccountLinkingService:
         if not platform_user.tenant_user:
             return
         
-        # Sync from TenantUser to platform user
-        platform_user.subscription_status = platform_user.tenant_user.subscription_status
-        platform_user.save()
+        tenant_user = platform_user.tenant_user
+        
+        # Sync BOTH WAYS - if either is Paid, both become Paid
+        if tenant_user.subscription_status == 'Paid' or platform_user.subscription_status == 'Paid':
+            tenant_user.subscription_status = 'Paid'
+            platform_user.subscription_status = 'Paid'
+            tenant_user.save()
+            platform_user.save()
         
         logger.info(
             f"Synced subscription status for {platform_user.platform_type} "
             f"user {platform_user.user_id}"
         )
+
+    @staticmethod
+    def sync_all_data(tenant_user):
+        """
+        Synchronize data across all linked accounts for a TenantUser
+        """
+        linked_accounts = tenant_user.platform_accounts.all()
+        if not linked_accounts.exists():
+            return
+            
+        # If any account is Paid, all are Paid
+        any_paid = tenant_user.subscription_status == 'Paid' or \
+                   linked_accounts.filter(subscription_status='Paid').exists()
+        
+        if any_paid:
+            tenant_user.subscription_status = 'Paid'
+            tenant_user.save()
+            for acc in linked_accounts:
+                if acc.subscription_status != 'Paid':
+                    acc.subscription_status = 'Paid'
+                    acc.save()
+        
+        # Aggregate search counts (max)
+        max_searches = tenant_user.search_count
+        for acc in linked_accounts:
+            max_searches = max(max_searches, acc.search_count)
+        
+        if tenant_user.search_count != max_searches:
+            tenant_user.search_count = max_searches
+            tenant_user.save()
+            
+        logger.info(f"Synchronized all data for TenantUser {tenant_user.email}")
 
 
 # Example usage in Telegram bot command

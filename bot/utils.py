@@ -60,7 +60,7 @@ def create_flutterwave_payment(email: str, amount: float, currency: str = "USD",
     }
     
     if not reference:
-        reference = f"FLW_{int(time.time())}"
+        reference = f"JOBBOT_FLW_{int(time.time())}"
     
     data = {
         "tx_ref": reference,

@@ -1,6 +1,5 @@
-version: "3.9"
-
 services:
+  
   job-web:
     build: .
     container_name: job-web
@@ -8,16 +7,22 @@ services:
       - .:/app
     env_file:
       - .env
-    environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - DATABASE_URL=postgresql://jobbot:JoBB0t@db:5432/jobbot
+    command: gunicorn jobsearchbot.wsgi:application --bind 0.0.0.0:8010 --workers 2 --timeout 120
     depends_on:
       - db
+      - redis
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=jobbot
+      - POSTGRES_USER=jobbot
+      - POSTGRES_PASSWORD=JoBB0t
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     restart: unless-stopped
     networks:
       - nginx-proxy-net
       - internal_network
-    command: gunicorn jobsearchbot.wsgi:application --bind 0.0.0.0:8010 --workers 2 --timeout 120
 
 
   job-bot:
@@ -27,15 +32,21 @@ services:
       - .:/app
     env_file:
       - .env
-    environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - DATABASE_URL=postgresql://jobbot:JoBB0t@db:5432/jobbot
+    command: python manage.py run_bot
     depends_on:
       - db
+      - redis
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=jobbot
+      - POSTGRES_USER=jobbot
+      - POSTGRES_PASSWORD=JoBB0t
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     restart: unless-stopped
     networks:
       - internal_network
-    command: python manage.py run_bot
 
   db:
     image: postgres:15
@@ -48,6 +59,57 @@ services:
       - db_data:/var/lib/postgresql/data
     networks:
       - internal_network
+
+  redis:
+    image: redis:alpine
+    container_name: jobbot-redis
+    networks:
+      - internal_network
+    restart: unless-stopped
+
+  celery:
+    build: .
+    container_name: jobbot-celery
+    command: celery -A jobsearchbot worker --loglevel=info
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=jobbot
+      - POSTGRES_USER=jobbot
+      - POSTGRES_PASSWORD=JoBB0t
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    networks:
+      - internal_network
+    restart: unless-stopped
+
+  celery-beat:
+    build: .
+    container_name: jobbot-celery-beat
+    command: celery -A jobsearchbot beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=jobbot
+      - POSTGRES_USER=jobbot
+      - POSTGRES_PASSWORD=JoBB0t
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    networks:
+      - internal_network
+    restart: unless-stopped
 
 
 volumes:

@@ -163,10 +163,17 @@ class JobSearchView(APIView):
             )
         
         tenant_user = request.user.tenant_user
+        logger.info(f"🌐 Web Search Request - Query: '{query}', Filters: {filters}, User: {tenant_user.email}")
+        
+        # Check if user is premium (either web account or ANY linked platform account)
+        is_premium = tenant_user.subscription_status == 'Paid'
+        if not is_premium:
+            # Check linked platform accounts
+            is_premium = tenant_user.platform_accounts.filter(subscription_status='Paid').exists()
         
         # Check search limit for free users
-        if tenant_user.subscription_status != 'Paid':
-            if tenant_user.search_count >= 10:  # FREE_SEARCH_LIMIT
+        if not is_premium:
+            if tenant_user.search_count >= 25:  # FREE_SEARCH_LIMIT
                 return Response(
                     {'error': 'Search limit reached. Please upgrade to premium.'},
                     status=status.HTTP_403_FORBIDDEN
@@ -174,15 +181,27 @@ class JobSearchView(APIView):
             tenant_user.search_count += 1
             tenant_user.save()
         
-        # Search jobs
         try:
+            logger.info(f"🌐 Calling get_all_jobs with query='{query}', filters={filters}")
             jobs = get_all_jobs(query, filters)
+            logger.info(f"🌐 Web Search Results - Found {len(jobs)} jobs for query '{query}' (Premium: {is_premium})")
+            
+            # Log per-source breakdown for debugging
+            sources = {}
+            for job in jobs:
+                source = job.get('source', 'Unknown')
+                sources[source] = sources.get(source, 0) + 1
+            logger.info(f"🌐 Jobs by source: {sources}")
+            
+            # Premium users get more results
+            display_limit = 50 if is_premium else 20
             
             return Response({
                 'query': query,
                 'count': len(jobs),
-                'jobs': jobs[:20],  # Limit to 20 results
-                'searches_remaining': max(0, 10 - tenant_user.search_count) if tenant_user.subscription_status != 'Paid' else None
+                'jobs': jobs[:display_limit],
+                'is_premium': is_premium,
+                'searches_remaining': max(0, 25 - tenant_user.search_count) if not is_premium else None
             })
         except Exception as e:
             logger.error(f"Job search error: {e}", exc_info=True)
@@ -263,7 +282,7 @@ class AlertViewSet(viewsets.ModelViewSet):
         
         # Check alert limit
         active_count = Alert.objects.filter(user=platform_user, active=True).count()
-        limit = 5 if platform_user.subscription_status == 'Paid' else 1
+        limit = 20 if platform_user.subscription_status == 'Paid' else 5
         
         if active_count >= limit:
             raise serializers.ValidationError(

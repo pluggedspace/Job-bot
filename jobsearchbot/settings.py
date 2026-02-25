@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-0mq1)2+s&w#p*cs10aq7+!)ywi2)r$zjpv!ktqmqkqun2*4x*e
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ["api.pluggedspace.org", "job-web", "job.pluggedspace.org", "localhost", "127.0.0.1"]
+ALLOWED_HOSTS = ["api.pluggedspace.org", "job-web", "job.pluggedspace.org", "45.77.138.21"]
 
 FORCE_SCRIPT_NAME = "/job"
 
@@ -50,7 +50,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'django_apscheduler',
     'django.contrib.sitemaps',
     'rest_framework',  # REST framework for API
     'corsheaders',
@@ -123,14 +122,18 @@ DATABASES = {
         'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'JoBB0t'),
         'HOST': os.getenv('POSTGRES_HOST', 'db'),
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
+        # Connection pooling for async operations
+        'CONN_MAX_AGE': 60,  # Keep connections alive for 60 seconds
+        'CONN_HEALTH_CHECKS': True,  # Check connection health before each use (crucial for async/threads)
+        'OPTIONS': {
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=30000',  # 30 second query timeout
+        },
+        'ATOMIC_REQUESTS': False,  # Important for async operations
+        'AUTOCOMMIT': True,
+        'DISABLE_SERVER_SIDE_CURSORS': True,  # Prevent cursor issues in thread pools
     }
 }
-
-# Alternative: Parse DATABASE_URL if provided (for Railway, Heroku, etc.)
-database_url = os.getenv('DATABASE_URL')
-if database_url:
-    import dj_database_url
-    DATABASES['default'] = dj_database_url.parse(database_url)
 
 
 # Password validation
@@ -207,7 +210,14 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:63
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
+# Explicit Beat Schedule (Fallback if not using DatabaseScheduler)
+from celery.schedules import crontab
+CELERY_BEAT_SCHEDULE = {
+    'check_alerts_every_30_mins': {
+        'task': 'bot.tasks.check_alerts',
+        'schedule': 1800.0,  # 30 minutes
+    },
+}
 
 # CORS Configuration for Next.js Frontend
 CORS_ALLOWED_ORIGINS = [
@@ -245,3 +255,12 @@ WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "job_bot_verify_token
 META_ACCESS_TOKEN = os.getenv('META_ACCESS_TOKEN')
 META_PHONE_NUMBER_ID = os.getenv('META_PHONE_NUMBER_ID')
 META_VERIFY_TOKEN = os.getenv('META_VERIFY_TOKEN', "job_bot_verify_token")
+
+# Job Search API Keys
+ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID")
+ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY")
+CAREERJET_API_KEY = os.getenv("CAREERJET_API_KEY")
+CAREERJET_LOCALE = os.getenv("CAREERJET_LOCALE", "en_US")
+FINDWORK_API_KEY = os.getenv("FINDWORK_API_KEY")
+JOOBLE_API_KEY = os.getenv("JOOBLE_API_KEY")
+

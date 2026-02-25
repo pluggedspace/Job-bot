@@ -1,15 +1,14 @@
-from apscheduler.schedulers.background import BackgroundScheduler
-from django_apscheduler.jobstores import DjangoJobStore
-from django_apscheduler.models import DjangoJobExecution
+from celery import shared_task
 from django.conf import settings
-from bot.utils import get_jobs
-from bot.models import Alert, User
-from telegram import Bot, ParseMode
+from bot.functions.jobs import get_jobs
+from bot.models import Alert
+from telegram import Bot
+from telegram.constants import ParseMode
 import logging
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
+@shared_task(name='bot.tasks.check_alerts')
 def check_alerts():
     bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
     alerts = Alert.objects.filter(active=True)
@@ -65,22 +64,3 @@ def check_alerts():
                 
         except Exception as e:
             logger.error(f"Error checking alert {alert.id}: {e}")
-
-def start_scheduler():
-    scheduler = BackgroundScheduler()
-    scheduler.add_jobstore(DjangoJobStore(), "default")
-    
-    # Check alerts every 30 minutes
-    scheduler.add_job(
-        check_alerts,
-        trigger="interval",
-        minutes=30,
-        id="check_alerts",
-        max_instances=1,
-        replace_existing=True,
-    )
-    
-    try:
-        scheduler.start()
-    except KeyboardInterrupt:
-        scheduler.shutdown()

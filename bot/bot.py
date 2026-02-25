@@ -1,5 +1,6 @@
 import logging
 import time
+import hashlib
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -7,8 +8,10 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
     MessageHandler,
-    filters
+    filters,
+    AIORateLimiter
 )
+from telegram.error import NetworkError, BadRequest, TimedOut, Forbidden, TelegramError
 from django.conf import settings
 from asgiref.sync import sync_to_async
 from bot.models import User, Job, Alert, InterviewSession, InterviewResponse
@@ -31,14 +34,18 @@ from bot.services.interview import handle_interview_practice, cancel_session, ge
 logger = logging.getLogger(__name__)
 
 # Global constants
-# Global constants
-FREE_SEARCH_LIMIT = 10
-FREE_ALERT_LIMIT = 1
-PREMIUM_ALERT_LIMIT = 5
+FREE_SEARCH_LIMIT = 25
+FREE_ALERT_LIMIT = 5
+PREMIUM_ALERT_LIMIT = 20
 
 class JobSearchBot:
     def __init__(self):
-        self.application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+        self.application = (
+            Application.builder()
+            .token(settings.TELEGRAM_BOT_TOKEN)
+            .rate_limiter(AIORateLimiter())
+            .build()
+        )
         self.setup_handlers()
         self.job_cache = {}
 
@@ -74,6 +81,39 @@ class JobSearchBot:
         self.application.add_handler(CallbackQueryHandler(self.back_to_results, pattern=r"^back_to_results$"))
         self.application.add_handler(CallbackQueryHandler(self.toggle_alert, pattern=r"^alert_"))
 
+        # Error Handler
+        self.application.add_error_handler(self.error_handler)
+
+    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Log the error and handle it gracefully."""
+        
+        # Handle transient network errors (don't log as ERROR)
+        if isinstance(context.error, (NetworkError, TimedOut)):
+            logger.warning(f"Transient network error: {context.error}")
+            return
+
+        if isinstance(context.error, Forbidden):
+            # The bot was blocked by the user
+            logger.info(f"Bot blocked by user: {context.error}")
+            return
+
+        if isinstance(context.error, BadRequest):
+            # Handle malformed requests
+            logger.warning(f"Bad request: {context.error}")
+            return
+
+        # Log genuine unexpected errors
+        logger.error(f"Exc in handler: {context.error}", exc_info=context.error)
+            
+        # Notify user for unexpected errors
+        if isinstance(update, Update) and update.effective_message:
+            try:
+                await update.effective_message.reply_text(
+                    "⚠️ An unexpected error occurred. We're looking into it!"
+                )
+            except Exception:
+                pass
+
         # Helper for interview lock
     async def check_interview_lock(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """Returns True if user is locked in an interview"""
@@ -89,6 +129,52 @@ class JobSearchBot:
             )
             return True
         return False
+
+    def safe_html_format(self, text: str) -> str:
+        """Strip or convert unsupported HTML tags for Telegram ParseMode.HTML"""
+        if not text:
+            return ""
+        
+        # Replace common tags with supported ones or strip them
+        # Supported: <b>, <i>, <u>, <s>, <a>, <code>, <pre>
+        replacements = [
+            ('<p>', '\n'), ('</p>', '\n'),
+            ('<br>', '\n'), ('<br/>', '\n'), ('<br />', '\n'),
+            ('<ul>', '\n'), ('</ul>', '\n'),
+            ('<li>', ' • '), ('</li>', '\n'),
+            ('<strong>', '<b>'), ('</strong>', '</b>'),
+            ('<em>', '<i>'), ('</em>', '</i>'),
+            ('<h1>', '<b>'), ('</h1>', '</b>\n'),
+            ('<h2>', '<b>'), ('</h2>', '</b>\n'),
+            ('<h3>', '<b>'), ('</h3>', '</b>\n'),
+            ('<h4>', '<b>'), ('</h4>', '</b>\n'),
+        ]
+        
+        result = text
+        for old, new in replacements:
+            result = result.replace(old, new)
+            
+        # Very basic tag stripping for anything else remaining (not perfect but helpful)
+        import re
+        # Remove any remaining tags that are not explicitly allowed
+        result = re.sub(r'<(?!/?(?:b|i|u|s|a|code|pre)\b)[^>]*>', '', result)
+        
+        # Unescape HTML entities (basic)
+        result = result.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&#39;', "'")
+        
+        # Ensure all opened tags are properly closed to prevent Telegram API errors
+        # Count open and close tags for b and i
+        for tag in ['b', 'i', 'u', 's']:
+            open_count = len(re.findall(f'<{tag}>', result, re.IGNORECASE))
+            close_count = len(re.findall(f'</{tag}>', result, re.IGNORECASE))
+            # Add missing close tags
+            if open_count > close_count:
+                result += f'</{tag}>' * (open_count - close_count)
+        
+        # Remove excessive newlines
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        
+        return result.strip()
 
     # Database helper methods
     @staticmethod
@@ -226,7 +312,7 @@ class JobSearchBot:
 
     @staticmethod
     @sync_to_async
-    def get_user_jobs(user_id, limit=10):
+    def get_user_jobs(user_id, limit=25):
         return list(Job.objects.filter(user__user_id=user_id).order_by('-saved_at')[:limit])
 
     @staticmethod
@@ -321,7 +407,7 @@ class JobSearchBot:
             "💎 *Premium*\n"
             "• `/subscribe` - Get unlimited searches & more alerts\n"
             "• `/quota` - Check your free search limit\n\n"
-            f"ℹ️ _Free users get {FREE_SEARCH_LIMIT} searches per month and {FREE_ALERT_LIMIT} alert._",
+            f"ℹ️ _Free users get {FREE_SEARCH_LIMIT} searches per month and {FREE_ALERT_LIMIT} alerts._",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -409,48 +495,53 @@ class JobSearchBot:
         posted = job.get('job_posted_at', 'N/A')
         is_remote = job.get('remote', False)
         
-        # Build header with title and company
+        # Build message with enforced order: Title, Company, Location, Salary, Date Posted
+        
+        # 1. Title
         message = f"💼 <b>{title}</b>\n\n"
         
-        # Company and location section
+        # 2. Company
         message += f"🏢 <b>Company:</b> {company}\n"
         
-        # Location with remote badge
+        # 3. Location with remote badge
         if is_remote:
             message += f"📍 <b>Location:</b> {location}, {country} 🌐 <i>Remote</i>\n"
         else:
             message += f"📍 <b>Location:</b> {location}, {country}\n"
         
-        # Employment type
-        message += f"⏰ <b>Type:</b> {job_type}\n"
-        
-        # Posted date
-        if posted and posted != 'N/A':
-            # Try to format the date nicely
-            try:
-                from datetime import datetime
-                if isinstance(posted, str):
-                    # Handle ISO format or timestamp
-                    if 'T' in posted:
-                        dt = datetime.fromisoformat(posted.replace('Z', '+00:00'))
-                        posted = dt.strftime('%B %d, %Y')
-                message += f"📅 <b>Posted:</b> {posted}\n"
-            except:
-                message += f"📅 <b>Posted:</b> {posted}\n"
-        
-        # Salary information (if available)
+        # 4. Salary (always show, with "Not specified" if missing)
         salary_min = job.get('job_min_salary')
         salary_max = job.get('job_max_salary')
         salary_currency = job.get('job_salary_currency', 'USD')
         
-        if salary_min or salary_max:
-            message += "\n💰 <b>Salary:</b> "
-            if salary_min and salary_max:
-                message += f"{salary_currency} {salary_min:,} - {salary_max:,}\n"
-            elif salary_min:
-                message += f"{salary_currency} {salary_min:,}+\n"
-            elif salary_max:
-                message += f"Up to {salary_currency} {salary_max:,}\n"
+        message += "💰 <b>Salary:</b> "
+        if salary_min and salary_max:
+            message += f"{salary_currency} {salary_min:,} - {salary_max:,}\n"
+        elif salary_min:
+            message += f"{salary_currency} {salary_min:,}+\n"
+        elif salary_max:
+            message += f"Up to {salary_currency} {salary_max:,}\n"
+        else:
+            message += "<i>Not specified</i>\n"
+        
+        # 5. Date Posted (always show)
+        message += "📅 <b>Posted:</b> "
+        if posted and posted != 'N/A':
+            try:
+                from datetime import datetime
+                if isinstance(posted, str) and 'T' in posted:
+                    dt = datetime.fromisoformat(posted.replace('Z', '+00:00'))
+                    message += f"{dt.strftime('%B %d, %Y')}\n"
+                else:
+                    message += f"{posted}\n"
+            except:
+                message += f"{posted}\n"
+        else:
+            message += "<i>Not specified</i>\n"
+        
+        # Employment type (as additional info)
+        if job_type and job_type != 'N/A':
+            message += f"⏰ <b>Type:</b> {job_type}\n"
         
         # Required skills/qualifications (if available)
         required_skills = job.get('job_required_skills')
@@ -466,6 +557,9 @@ class JobSearchBot:
         description = job.get('job_description', '')
         if description:
             message += f"\n📋 <b>Description:</b>\n"
+            # Format HTML safely
+            description = self.safe_html_format(description)
+            
             # Smart truncation - try to break at sentence or word boundary
             max_length = 800
             if len(description) > max_length:
@@ -480,6 +574,8 @@ class JobSearchBot:
                     description = truncated[:last_space] + "..."
                 else:
                     description = truncated + "..."
+                # Re-apply safe_html_format after truncation to close any opened tags
+                description = self.safe_html_format(description)
             
             message += f"{description}\n"
         
@@ -491,7 +587,7 @@ class JobSearchBot:
                 for benefit in benefits[:5]:
                     message += f"  • {benefit}\n"
             else:
-                message += f"  {benefits}\n"
+                message += f"  {self.safe_html_format(str(benefits))}\n"
         
         # Application deadline (if available)
         deadline = job.get('job_offer_expiration_datetime_utc')
@@ -512,11 +608,24 @@ class JobSearchBot:
         # Back button
         buttons.append([InlineKeyboardButton("⬅️ Back to Results", callback_data="back_to_results")])
         
-        await query.edit_message_text(
-            text=message,
-            reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await query.edit_message_text(
+                text=message,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                parse_mode=ParseMode.HTML
+            )
+        except BadRequest as e:
+            if "Message is not modified" in str(e):
+                pass # Ignore if content is same
+            else:
+                logger.error(f"Error editing message: {e}")
+                # Fallback to plain text if HTML parsing fails
+                try:
+                    import re
+                    clean_text = re.sub(r'<[^>]*>', '', message)
+                    await query.edit_message_text(text=clean_text, reply_markup=InlineKeyboardMarkup(buttons))
+                except Exception as inner_e:
+                    logger.error(f"Fallback edit failed: {inner_e}")
 
     async def save_job_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle save job button click"""
@@ -601,22 +710,27 @@ class JobSearchBot:
             return
         
         for job in jobs:
-            job_id = job.get("job_id", str(hash(job.get('job_title', '') + job.get('employer_name', ''))))
-            self.job_cache[job_id] = job
+            # Generate a short, stable ID to fit within Telegram's 64-byte callback_data limit
+            # Even if job_id exists, use a hash to ensure it's short enough
+            original_id = str(job.get("job_id", ""))
+            stable_data = f"{job.get('job_title', '')}{job.get('employer_name', '')}{original_id}".encode()
+            short_id = hashlib.md5(stable_data).hexdigest()[:12]
+            job["job_id"] = short_id  # Always use short ID for Telegram
+            self.job_cache[short_id] = job
         
         message = f"🔍 Found *{len(jobs)}* jobs matching your search:\n\n"
         await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
         
         # Determine how many jobs to show
-        display_limit = len(jobs) if is_premium else 5
+        display_limit = len(jobs) if is_premium else 10
         jobs_to_show = jobs[:display_limit]
 
         for job in jobs_to_show:
-            title = job.get('job_title', 'N/A')
-            company = job.get('employer_name', 'Unknown')
+            title = self.safe_html_format(job.get('job_title', 'N/A'))
+            company = self.safe_html_format(job.get('employer_name', 'Unknown'))
             location = f"{job.get('job_city', 'N/A')}, {job.get('job_country', 'N/A')}"
             job_type = job.get('job_employment_type', 'N/A')
-            job_id = job.get("job_id", str(hash(title + company)))
+            job_id = job.get("job_id")
             is_remote = job.get('remote', False)
             posted = job.get('job_posted_at', 'N/A')
             
@@ -642,7 +756,7 @@ class JobSearchBot:
                 except:
                     posted_text = f"📅 {posted}"
             
-            await self.save_job(user_id, job_id, title, company)
+            # await self.save_job(user_id, job_id, title, company)
             
             # Build job card message
             job_message = f"💼 <b>{title}</b>\n"
@@ -654,21 +768,55 @@ class JobSearchBot:
             else:
                 job_message += f"📍 {location}\n"
             
+            # Salary information (if available)
+            salary_min = job.get('job_min_salary')
+            salary_max = job.get('job_max_salary')
+            salary_currency = job.get('job_salary_currency', 'USD')
+            if salary_min or salary_max:
+                if salary_min and salary_max:
+                    job_message += f"💰 {salary_currency} {salary_min:,} - {salary_max:,}\n"
+                elif salary_min:
+                    job_message += f"💰 {salary_currency} {salary_min:,}+\n"
+                elif salary_max:
+                    job_message += f"💰 Up to {salary_currency} {salary_max:,}\n"
+            
             job_message += f"⏰ {job_type}"
             
             if posted_text:
                 job_message += f" • {posted_text}"
             
-            keyboard = [[InlineKeyboardButton("👁️ View Details", callback_data=f"view_{job_id}")]]
-            await update.message.reply_text(
-                job_message,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.HTML
-            )
+            # Add source
+            source = job.get('source', '')
+            if source:
+                job_message += f"\n<i>via {source}</i>"
+            
+            # Ensure callback_data stays under 64 bytes (Telegram limit)
+            callback_data = f"view_{job_id}"
+            if len(callback_data.encode('utf-8')) > 64:
+                # Fallback: use even shorter hash
+                callback_data = f"v_{hashlib.md5(job_id.encode()).hexdigest()[:10]}"
+                self.job_cache[callback_data.split('_', 1)[1]] = job
+            
+            keyboard = [[InlineKeyboardButton("👁️ View Details", callback_data=callback_data)]]
+            try:
+                await update.message.reply_text(
+                    job_message,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.HTML
+                )
+            except BadRequest as e:
+                logger.error(f"Error sending job message: {e}")
+                # Retry without HTML parse mode
+                import re
+                clean_message = re.sub(r'<[^>]*>', '', job_message)
+                await update.message.reply_text(
+                    clean_message,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
         
-        if not is_premium and len(jobs) > 5:
+        if not is_premium and len(jobs) > 25:
             await update.message.reply_text(
-                f"⚠️ Showing top 5 results. *Upgrade to Premium* to see all {len(jobs)} jobs!",
+                f"⚠️ Showing top 25 results. *Upgrade to Premium* to see all {len(jobs)} jobs!",
                 parse_mode=ParseMode.MARKDOWN
             )
 
@@ -733,15 +881,16 @@ class JobSearchBot:
             return
             
         provider = 'paystack' if currency == 'NGN' else 'flutterwave'
-        reference = f"{provider.upper()}_{user_id}_{int(time.time())}"
+        prefix = "JOBBOT_PSTK" if provider == 'paystack' else "JOBBOT_FLW"
+        reference = f"{prefix}_{user_id}_{int(time.time())}"
         
         try:
             if provider == 'paystack':
-                data = create_paystack_payment(email, 4500, reference)
+                data = create_paystack_payment(email, 12500, reference)
                 if not data.get("status"):
                     raise Exception("Failed to create Paystack payment")
                 url = data['data']['authorization_url']
-                amount_display = "NGN 4,500"
+                amount_display = "NGN 12,500"
                 
             else:  # flutterwave
                 data = create_flutterwave_payment(email, 9.99, 'USD', reference)
@@ -784,9 +933,9 @@ class JobSearchBot:
         user_id = str(update.effective_user.id)
         
         # Auto-detect provider
-        if ref.startswith('PAYSTACK_'):
+        if 'JOBBOT_PSTK_' in ref or ref.startswith('PAYSTACK_') or ref.startswith('REF_'):
             provider = 'paystack'
-        elif ref.startswith('FLUTTERWAVE_') or ref.startswith('FLW_'):
+        elif 'JOBBOT_FLW_' in ref or ref.startswith('FLUTTERWAVE_') or ref.startswith('FLW_'):
             provider = 'flutterwave'
         else:
             provider = 'paystack'  # Default/Legacy
@@ -801,7 +950,14 @@ class JobSearchBot:
                 success = result.get("data", {}).get("status") == "successful"
                 
             if success:
-                await self.update_user_status(user_id, "Paid", ref)
+                # Sync all data if it's a platform user linked to a tenant user
+                from asgiref.sync import sync_to_async
+                from bot.services.account_linking import AccountLinkingService
+                
+                user = await self.update_user_status(user_id, "Paid", ref)
+                if user.tenant_user:
+                    await sync_to_async(AccountLinkingService.sync_all_data)(user.tenant_user)
+                
                 await query.edit_message_text("✅ *Payment Verified!* You are now a Premium user. Enjoy unlimited searches!", parse_mode=ParseMode.MARKDOWN)
             else:
                 await query.edit_message_text("Verification failed or still pending. Please try again later.")
@@ -848,7 +1004,7 @@ class JobSearchBot:
             if active_count >= limit:
                 msg = f"❌ You've reached your limit of {limit} alert(s)."
                 if user.subscription_status != 'Paid':
-                    msg += "\nUse /subscribe to get up to 5 alerts!"
+                    msg += "\nUse /subscribe to get up to 25 alerts!"
                 await update.message.reply_text(msg)
                 return
 
@@ -1027,7 +1183,7 @@ class JobSearchBot:
             f"The *{feature_name}* is available only to Premium users.\n\n"
             "Upgrade now to access:\n"
             "✅ Unlimited Job Searches\n"
-            "✅ 5 Active Job Alerts\n"
+            "✅ 25 Active Job Alerts\n"
             "✅ CV Review & Cover Letter Generator\n\n"
             "Use `/subscribe <email>` to upgrade!",
             parse_mode=ParseMode.MARKDOWN

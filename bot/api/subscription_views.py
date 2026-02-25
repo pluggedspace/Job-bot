@@ -16,7 +16,7 @@ from bot.models import User
 
 logger = logging.getLogger(__name__)
 
-FREE_SEARCH_LIMIT = 15
+FREE_SEARCH_LIMIT = 10
 
 
 class CreateSubscriptionView(APIView):
@@ -73,7 +73,8 @@ class CreateSubscriptionView(APIView):
             user_id = platform_user.user_id
             
             # Generate payment reference
-            reference = f"{provider.upper()}_{user_id}_{int(time.time())}"
+            prefix = "JOBBOT_PSTK" if provider == 'paystack' else "JOBBOT_FLW"
+            reference = f"{prefix}_{user_id}_{int(time.time())}"
             
             # Create payment based on provider
             if provider == 'paystack':
@@ -157,9 +158,9 @@ class VerifyPaymentView(APIView):
         
         # Auto-detect provider from reference if not provided
         if not provider:
-            if reference.startswith('PAYSTACK_'):
+            if 'JOBBOT_PSTK_' in reference or reference.startswith('PAYSTACK_') or reference.startswith('REF_'):
                 provider = 'paystack'
-            elif reference.startswith('FLUTTERWAVE_') or reference.startswith('FLW_'):
+            elif 'JOBBOT_FLW_' in reference or reference.startswith('FLUTTERWAVE_') or reference.startswith('FLW_'):
                 provider = 'flutterwave'
             else:
                 # Default to paystack for backward compatibility
@@ -197,6 +198,10 @@ class VerifyPaymentView(APIView):
                 platform_user.subscription_status = "Paid"
                 platform_user.payment_reference = reference
                 platform_user.save()
+                
+                # Sync all data to the TenantUser immediately
+                from bot.services.account_linking import AccountLinkingService
+                AccountLinkingService.sync_all_data(tenant_user)
                 
                 return Response({
                     'success': True,
@@ -241,12 +246,17 @@ class QuotaView(APIView):
             
             platform_user = platform_users.first()
             
-            is_premium = platform_user.subscription_status == 'Paid'
+            # Check if ANY account is premium
+            is_premium = tenant_user.subscription_status == 'Paid' or \
+                         platform_users.filter(subscription_status='Paid').exists()
+            
+            # Use aggregated search count from TenantUser (which should be synced)
+            search_count = tenant_user.search_count
             
             return Response({
-                'subscription_status': platform_user.subscription_status,
+                'subscription_status': 'Paid' if is_premium else 'Free',
                 'is_premium': is_premium,
-                'search_count': platform_user.search_count,
+                'search_count': search_count,
                 'search_limit': None if is_premium else FREE_SEARCH_LIMIT,
                 'searches_remaining': None if is_premium else max(0, FREE_SEARCH_LIMIT - platform_user.search_count),
                 'alert_count': platform_user.alerts.filter(active=True).count(),

@@ -3,6 +3,7 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 )
 from docx import Document
+from docx.shared import Pt
 import os
 from asgiref.sync import sync_to_async
 from bot.models import User
@@ -220,47 +221,90 @@ async def get_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     # Create CV Document
     doc = Document()
-    doc.add_heading(d['name'], 0)
-    doc.add_paragraph(d['title'])
-    doc.add_paragraph(f"{d['email']} | {d['phone']} | {d['location']}")
+    
+    # --- STYLE SETTINGS FOR ATS ---
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Arial'
+    font.size = Pt(11)
+    
+    # Helper to add cleaner sections
+    def add_section_header(document, text):
+        p = document.add_paragraph()
+        run = p.add_run(text)
+        run.bold = True
+        run.font.size = Pt(14)
+        run.font.name = 'Arial'
+        # Add a bottom border if possible, but for simplicity we'll just use spacing
+        p.paragraph_format.space_before = Pt(12)
+        p.paragraph_format.space_after = Pt(6)
+
+    # Header
+    name_p = doc.add_paragraph()
+    name_run = name_p.add_run(d['name'])
+    name_run.bold = True
+    name_run.font.size = Pt(22)
+    name_run.font.name = 'Arial'
+    name_p.alignment = 1 # Center
+
+    info_p = doc.add_paragraph()
+    info_p.alignment = 1
+    info_run = info_p.add_run(f"{d['title']}\n{d['email']} | {d['phone']} | {d['location']}")
+    info_run.font.size = Pt(10)
 
     if d.get('links'):
-        doc.add_heading("Links", level=1)
-        for link in d['links']:
-            doc.add_paragraph(link, style='List Bullet')
+        links_p = doc.add_paragraph()
+        links_p.alignment = 1
+        links_run = links_p.add_run(" | ".join(d['links']))
+        links_run.font.size = Pt(10)
 
-    doc.add_heading("Professional Summary", level=1)
+    doc.add_paragraph() # Spacer
+
+    # Professional Summary
+    add_section_header(doc, "PROFESSIONAL SUMMARY")
     doc.add_paragraph(d['summary'])
 
-    doc.add_heading("Education", level=1)
-    for edu in d['education']:
-        doc.add_paragraph(edu, style='List Bullet')
-
-    doc.add_heading("Experience", level=1)
+    # Experience
+    add_section_header(doc, "PROFESSIONAL EXPERIENCE")
     for exp in d['experience']:
-        doc.add_paragraph(exp, style='List Bullet')
+        p = doc.add_paragraph(exp, style='List Bullet')
+        p.paragraph_format.space_after = Pt(2)
 
-    doc.add_heading("Certifications", level=1)
-    for cert in d['certifications']:
-        doc.add_paragraph(cert, style='List Bullet')
+    # Education
+    add_section_header(doc, "EDUCATION")
+    for edu in d['education']:
+        p = doc.add_paragraph(edu, style='List Bullet')
+        p.paragraph_format.space_after = Pt(2)
 
-    doc.add_heading("Languages", level=1)
-    for lang in d['languages']:
-        doc.add_paragraph(lang, style='List Bullet')
+    # Skills
+    add_section_header(doc, "SKILLS")
+    skills_text = ", ".join(d['skills'])
+    doc.add_paragraph(skills_text)
 
-    doc.add_heading("Awards", level=1)
-    for award in d['awards']:
-        doc.add_paragraph(award, style='List Bullet')
+    # Certifications
+    if d['certifications']:
+        add_section_header(doc, "CERTIFICATIONS")
+        for cert in d['certifications']:
+            doc.add_paragraph(cert, style='List Bullet')
 
-    doc.add_heading("Referees", level=1)
-    for ref in d['referees']:
-        doc.add_paragraph(ref, style='List Bullet')
+    # Languages
+    if d['languages']:
+        add_section_header(doc, "LANGUAGES")
+        doc.add_paragraph(", ".join(d['languages']))
 
-    doc.add_heading("Skills", level=1)
-    for skill in d['skills']:
-        doc.add_paragraph(skill, style='List Bullet')
+    # Awards
+    if d['awards']:
+        add_section_header(doc, "AWARDS")
+        for award in d['awards']:
+            doc.add_paragraph(award, style='List Bullet')
 
-    filename = f"{d['name'].replace(' ', '_')}_cv.docx"
+    # Referees
+    if d['referees']:
+        add_section_header(doc, "REFERENCES")
+        for ref in d['referees']:
+            doc.add_paragraph(ref, style='List Bullet')
+
+    filename = f"{d['name'].replace(' ', '_')}_CV.docx"
     doc.save(filename)
     with open(filename, 'rb') as f:
         await update.message.reply_document(

@@ -1,21 +1,20 @@
 import os
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+from mistralai import Mistral
 from bot.services.user_context import get_user_context
 from bot.models import InterviewSession, InterviewResponse
 from asgiref.sync import sync_to_async
 
 # Initialize AI
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-client = MistralClient(api_key=MISTRAL_API_KEY)
+client = Mistral(api_key=MISTRAL_API_KEY)
 
 def ai_prompt(prompt: str) -> str:
     try:
-        response = client.chat(
-            model="mistral-small",
+        response = client.chat.complete(
+            model="mistral-small-latest",
             messages=[
-                ChatMessage(role="system", content="You are a helpful and concise assistant."),
-                ChatMessage(role="user", content=prompt.strip())
+                {"role": "system", "content": "You are a helpful and concise assistant."},
+                {"role": "user", "content": prompt.strip()}
             ]
         )
         return response.choices[0].message.content.strip()
@@ -97,20 +96,21 @@ async def handle_interview_practice(user, user_input=None):
             # Only ask follow-up if last was a main question
             if not last_response.is_follow_up:
                 follow_up_prompt = f"""
-                You're a smart interviewer conducting a mock interview for the role of "{job_title}".
+                You are a senior interviewer evaluating a candidate for the role of "{job_title}".
+                
+                CONTEXT:
+                The candidate was asked: "{last_response.question}"
+                They answered: "{last_response.answer}"
 
-                The candidate was asked:
-                Q: {last_response.question}
-
-                They answered:
-                A: {last_response.answer}
-
-                Now ask a relevant follow-up question to dig deeper into their answer.
-                Make it short, clear, and insightful. Only return the follow-up question.
+                TASK:
+                Ask a probing follow-up question to test their depth of knowledge or clarify a specific part of their answer.
+                Focus on "How" and "Why".
+                Make it short, conversational, but challenging.
+                Only return the question text.
                 """
                 follow_up = ai_prompt(follow_up_prompt)
                 await create_question(session, follow_up, is_follow_up=True)
-                return f"🔁 *Follow-Up Question:*\n\n{follow_up.strip()}"
+                return f"🔁 *Follow-Up:* {follow_up.strip()}"
 
     # Only main questions count toward completion
     answered_main = await count_main_answers(session)
@@ -120,30 +120,54 @@ async def handle_interview_practice(user, user_input=None):
         combined_qa = "\n".join([f"Q: {q}\nA: {a}" for q, a in qa_pairs])
 
         review_prompt = f"""
-        You're an interview coach. Review this mock interview for the role of '{job_title}'.
+        You are an expert Interview Coach. Review this completed mock interview for the role of '{job_title}'.
 
+        TRANSCRIPT:
         {combined_qa}
 
-        Give a summary of the candidate's performance including:
-        - Strengths
-        - Weaknesses
-        - Suggestions to improve
+        TASK:
+        Provide a comprehensive performance review.
+        
+        Output Format (Markdown):
+        ### 🏆 Overall Verdict
+        (Pass/Fail/Borderline) with a 1-sentence summary.
+
+        ### ✅ Strengths
+        - Bullet points of what they did well (examples: clarity, STAR method usage, technical depth).
+
+        ### ⚠️ Areas for Improvement
+        - Bullet points of specific weak answers and why they were weak.
+        - "Did they answer the question asked?"
+        - "Did they use the STAR method (Situation, Task, Action, Result)?"
+
+        ### 💡 Key Advice
+        - One actionable tip for their next real interview.
         """
         review = ai_prompt(review_prompt)
-        return f"✅ **Mock Interview Complete!**\n\n📝 *Your Review:*\n\n{review}"
+        return f"✅ **Mock Interview Complete!**\n\n{review}"
 
     # Generate a new unique main question
     past_questions = await get_all_questions(session)
     question_list_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(past_questions)]) or "None yet."
 
     main_prompt = f"""
-    You're a professional interviewer for the role of "{job_title}".
-
-    These are the questions already asked:
+    You are a Hiring Manager for the role of "{job_title}".
+    
+    GOAL: Conduct a rigorous interview.
+    
+    HISTORY (Already Asked):
     {question_list_text}
 
-    Ask a new, unique, and insightful interview question (question {answered_main + 1} of {session.total_questions}).
-    Do NOT repeat topics. Only return the question.
+    TASK:
+    Generate question #{answered_main + 1} of {session.total_questions}.
+    
+    CRITERIA:
+    - If this is question 1, ask a "Tell me about yourself" or background question relevant to {job_title}.
+    - If mid-interview, ask a behavioral ("Tell me about a time...") or situational ("How would you handle...") question.
+    - If last question, ask a big-picture contribution question.
+    
+    Ensure the question is unique from the history. 
+    Only return the question text.
     """
     question = ai_prompt(main_prompt)
     await create_question(session, question, is_follow_up=False)

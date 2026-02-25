@@ -5,8 +5,7 @@ from django.utils.text import slugify
 from .user_context import get_user_context
 from bot.models import CareerPathCache
 from urllib.parse import quote
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+from mistralai import Mistral
 
 
 def resolve_career_path(job_title: str):
@@ -38,7 +37,7 @@ def fetch_career_path_ai(job_title):
         return None
 
     try:
-        client = MistralClient(api_key=api_key)
+        client = Mistral(api_key=api_key)
         model = "mistral-small-latest"
 
         prompt = (
@@ -52,8 +51,8 @@ def fetch_career_path_ai(job_title):
             f"Only return valid JSON. No explanation. Avoid markdown fencing."
         )
 
-        messages = [ChatMessage(role="user", content=prompt)]
-        response = client.chat(model=model, messages=messages)
+        messages = [{"role": "user", "content": prompt}]
+        response = client.chat.complete(model=model, messages=messages)
 
         content = response.choices[0].message.content.strip()
         content = content.strip("```json").strip("```").strip()

@@ -50,8 +50,10 @@ class InterviewPracticeView(APIView):
                 )
             
             # Handle interview
+            # Handle interview
             is_start = not message
-            result = handle_interview_practice(
+            from asgiref.sync import async_to_sync
+            result = async_to_sync(handle_interview_practice)(
                 platform_user,
                 None if is_start else message
             )
@@ -85,7 +87,9 @@ class InterviewSessionView(APIView):
                 return Response({'is_active': False})
             
             platform_user = platform_users.first()
-            active_session = get_active_session(platform_user)
+            platform_user = platform_users.first()
+            from asgiref.sync import async_to_sync
+            active_session = async_to_sync(get_active_session)(platform_user)
             
             return Response({
                 'is_active': active_session is not None,
@@ -112,7 +116,9 @@ class InterviewSessionView(APIView):
                 )
             
             platform_user = platform_users.first()
-            success = cancel_session(platform_user)
+            platform_user = platform_users.first()
+            from asgiref.sync import async_to_sync
+            success = async_to_sync(cancel_session)(platform_user)
             
             if success:
                 return Response({'message': 'Interview session cancelled successfully'})

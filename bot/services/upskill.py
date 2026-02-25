@@ -1,7 +1,6 @@
 import os
 import json
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+from mistralai import Mistral
 
 # Replace this function to use AI
 def query_ai_for_upskill_path(role):
@@ -11,7 +10,7 @@ def query_ai_for_upskill_path(role):
         return None
 
     try:
-        client = MistralClient(api_key=api_key)
+        client = Mistral(api_key=api_key)
         model = "mistral-small-latest"
 
         prompt = (
@@ -27,8 +26,8 @@ def query_ai_for_upskill_path(role):
             f"}}"
         )
 
-        messages = [ChatMessage(role="user", content=prompt)]
-        response = client.chat(model=model, messages=messages)
+        messages = [{"role": "user", "content": prompt}]
+        response = client.chat.complete(model=model, messages=messages)
 
         # Extract and parse JSON from the response
         text = response.choices[0].message.content.strip()

@@ -2,16 +2,8 @@ import requests
 import logging
 from django.conf import settings
 import datetime
-import feedparser
-import hashlib
 
 logger = logging.getLogger(__name__)
-
-def generate_stable_id(s: str) -> str:
-    """Generate a stable ID from a string using MD5."""
-    if not s:
-        return ""
-    return hashlib.md5(str(s).encode('utf-8')).hexdigest()
 
 
 
@@ -35,32 +27,24 @@ def get_jobs(query: str, filters: dict = None) -> list:
         logger.error(f"JSearch fetch error: {e}")
         return []
 
-# New Integration: Arbeitnow
 def get_jobs_arbeitnow(query: str, filters: dict = None) -> list:
     url = "https://www.arbeitnow.com/api/job-board-api"
     logger.info(f"Searching Arbeitnow for: {query}")
     try:
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=7)
         jobs = response.json().get("data", [])
         logger.info(f"Arbeitnow returned {len(jobs)} total jobs from API")
         if jobs:
             logger.info(f"Arbeitnow sample title: {jobs[0].get('title')}")
             
         query_words = query.lower().split()
-        # Permissive word-based filter: match if ANY word is present
-        # Special handling: if "remote" is in query, we might want to prioritize it, 
-        # but user said "respect the remote" but "mostly remote board". 
-        # So we'll just check if any keyword matches.
-        
+        # Permissive word-based filter: match if all words are present in title, company, OR description
         filtered = []
         for job in jobs:
             search_text = (job.get("title", "") + " " + 
                           job.get("company_name", "") + " " + 
                           job.get("description", "")).lower()
-            
-            # Relaxed Logic: Match if ANY word is in search_text
-            # But to avoid total noise (like "a", "the"), we rely on the query being meaningful keywords
-            if any(word in search_text for word in query_words):
+            if all(word in search_text for word in query_words):
                 filtered.append(job)
                 
         logger.info(f"Arbeitnow filtered down to {len(filtered)} jobs for query '{query}'")
@@ -109,12 +93,11 @@ def get_jobs_arbeitnow(query: str, filters: dict = None) -> list:
         logger.error(f"Arbeitnow fetch error: {e}")
         return []
 
-# New Integration: Remotive
 def get_jobs_remotive(query: str, filters: dict = None) -> list:
     url = "https://remotive.com/api/remote-jobs"
     logger.info(f"Searching Remotive for: {query}")
     try:
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=7)
         if not response.ok:
             logger.warning(f"Remotive API returned status {response.status_code}")
             return []
@@ -132,9 +115,7 @@ def get_jobs_remotive(query: str, filters: dict = None) -> list:
                           job.get("company_name", "") + " " + 
                           job.get("description", "") + " " + 
                           " ".join(job.get("tags", []))).lower()
-                          
-            # Relaxed Logic: Match if ANY word is in search_text
-            if any(word in search_text for word in query_words):
+            if all(word in search_text for word in query_words):
                 filtered.append(job)
                 
         logger.info(f"Remotive found {len(filtered)} jobs for query '{query}'")
@@ -145,7 +126,7 @@ def get_jobs_remotive(query: str, filters: dict = None) -> list:
             pub_date = job.get("publication_date", "N/A")
             
             normalized.append({
-                "job_id": str(job.get("id", generate_stable_id(job.get("url")))),
+                "job_id": str(job.get("id", hash(job.get("url")))),
                 "job_title": job.get("title", "N/A"),
                 "employer_name": job.get("company_name", "Unknown"),
                 "job_city": job.get("candidate_required_location", "Remote"),
@@ -162,7 +143,6 @@ def get_jobs_remotive(query: str, filters: dict = None) -> list:
         logger.error(f"Remotive fetch error: {e}")
         return []
 
-# New Integration: Jobicy
 def get_jobs_jobicy(query: str, filters: dict = None) -> list:
     # Jobicy API v2
     # GET https://jobicy.com/api/v2/remote-jobs
@@ -197,7 +177,7 @@ def get_jobs_jobicy(query: str, filters: dict = None) -> list:
             
     logger.info(f"Searching Jobicy for: {query} with params: {params}")
     try:
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, timeout=7)
         if not response.ok:
             logger.warning(f"Jobicy API returned status {response.status_code}")
             return []
@@ -255,7 +235,7 @@ def get_jobs_adzuna(query: str, filters: dict = None) -> list:
     
     logger.info(f"Searching Adzuna ({country}) for: {query}")
     try:
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, timeout=7)
         if not response.ok:
             logger.warning(f"Adzuna API returned status {response.status_code}")
             return []
@@ -293,8 +273,10 @@ def get_jobs_careerjet(query: str, filters: dict = None) -> list:
         return []
 
     # Map country codes to Careerjet locales
+    # Defaults to settings.CAREERJET_LOCALE or en_GB
     requested_country = filters.get('country', '').lower() if filters else ''
     
+    # Simple mapping of common codes (expand as needed)
     locale_map = {
         'us': 'en_US', 'gb': 'en_GB', 'uk': 'en_GB', 'ca': 'en_CA', 
         'au': 'en_AU', 'nz': 'en_NZ', 'za': 'en_ZA', 'ie': 'en_IE',
@@ -305,8 +287,14 @@ def get_jobs_careerjet(query: str, filters: dict = None) -> list:
         'cl': 'es_CL', 'co': 'es_CO', 'pe': 'es_PE', 've': 'es_VE',
         'vn': 'vi_VN', 'my': 'ms_MY', 'ph': 'en_PH', 'sg': 'en_SG',
         'cn': 'zh_CN', 'jp': 'ja_JP', 'kr': 'ko_KR', 'tw': 'zh_TW',
-        'in': 'en_IN',
+        'in': 'en_IN', # India usually en_IN
     }
+    
+    # Determine locale:
+    # 1. Explicit 'locale_code' filter
+    # 2. Mapped 'country' filter
+    # 3. Default from settings
+    # 4. Fallback 'en_GB'
     
     locale = None
     if filters:
@@ -320,13 +308,11 @@ def get_jobs_careerjet(query: str, filters: dict = None) -> list:
 
     url = "https://search.api.careerjet.net/v4/query"
     
-    # CRITICAL FIX: Fetch real public IP. Careerjet rejects 127.0.0.1 or invalid IPs.
-    try:
-        # Use a cached global IP if possible, but here we fetch fresh to be safe
-        user_ip = requests.get('https://api.ipify.org', timeout=3).text
-    except:
-        user_ip = '8.8.8.8' # Fallback to a known public IP (Google DNS) as a last resort placeholder
-        
+    # Construct Client IP and User Agent - required by API
+    # In a real view, we'd pass request.META.get('REMOTE_ADDR') and 'HTTP_USER_AGENT'
+    # Here strictly as a backend task, so we fake it or use server's info.
+    # Docs: "user_ip string required", "user_agent string required"
+    user_ip = filters.get('user_ip', '127.0.0.1') if filters else '127.0.0.1'
     user_agent = filters.get('user_agent', 'JobBot/1.0') if filters else 'JobBot/1.0'
     location = filters.get('location', '') if filters else ''
 
@@ -338,6 +324,8 @@ def get_jobs_careerjet(query: str, filters: dict = None) -> list:
         'user_agent': user_agent,
         'page_size': 20,
         'sort': 'relevance',
+        # 'affid': '213e213hd12345' # Not listed in v4 'required' params in the snippet provided by user, 
+                                    # but auth is via Basic Header.
     }
     
     # Basic Auth: API Key as username, password empty
@@ -345,8 +333,7 @@ def get_jobs_careerjet(query: str, filters: dict = None) -> list:
     
     logger.info(f"Searching Careerjet ({locale}) for: {query}")
     try:
-        # Increased timeout to 15s
-        response = requests.get(url, params=params, auth=auth, timeout=15)
+        response = requests.get(url, params=params, auth=auth, timeout=7)
         if not response.ok:
             logger.warning(f"Careerjet API returned status {response.status_code}")
             return []
@@ -357,17 +344,21 @@ def get_jobs_careerjet(query: str, filters: dict = None) -> list:
         
         normalized = []
         for job in jobs:
+            # V4 Job structure:
+            # {'title': '...', 'company': '...', 'date': '...', 'description': '...', 'locations': '...', 'url': '...', ...}
             normalized.append({
-                "job_id": job.get("url", generate_stable_id(job.get("title"))),
+                "job_id": job.get("url", hash(job.get("title"))),
                 "job_title": job.get("title", "N/A"),
                 "employer_name": job.get("company", "Unknown"),
                 "job_city": job.get("locations", "N/A"),
                 "job_country": locale.split('_')[-1] if '_' in locale else "N/A",
-                "job_employment_type": "N/A", 
+                "job_employment_type": "N/A", # Not provided in snippet details, usually contract_type in params, but not in job response? 
+                                              # Actually snippet says 'contract_type' is a param, assume not in response unless we requested?
+                                              # Docs say 'salary search' etc. 
                 "job_posted_at": job.get("date", "N/A"),
                 "job_description": job.get("description", ""),
                 "job_apply_link": job.get("url", None),
-                "remote": False,
+                "remote": False, # Careerjet specific remote logic needs mapping if valid
                 "source": "Careerjet"
             })
         return normalized
@@ -388,8 +379,7 @@ def get_jobs_findwork(query: str, filters: dict = None) -> list:
     
     logger.info(f"Searching Findwork.dev for: {query}")
     try:
-        # Increased timeout to 15s
-        response = requests.get(url, headers=headers, params=params, timeout=15)
+        response = requests.get(url, headers=headers, params=params, timeout=7)
         if not response.ok:
             logger.warning(f"Findwork API returned status {response.status_code}")
             return []
@@ -405,13 +395,13 @@ def get_jobs_findwork(query: str, filters: dict = None) -> list:
                 "job_title": job.get("role", "N/A"),
                 "employer_name": job.get("company_name", "Unknown"),
                 "job_city": job.get("location", "N/A"),
-                "job_country": "N/A",
+                "job_country": "N/A", # Sometimes in location text
                 "job_employment_type": ", ".join(job.get("employment_type", []) or []) if job.get("employment_type") else "N/A",
                 "job_posted_at": job.get("date_posted", "N/A"),
                 "job_description": job.get("text", ""),
                 "job_apply_link": job.get("url", None),
                 "remote": job.get("remote", False),
-                "source": "Findwork"
+                "source": "Findwork.dev"
             })
         return normalized
     except Exception as e:
@@ -431,8 +421,7 @@ def get_jobs_jooble(query: str, filters: dict = None) -> list:
     
     logger.info(f"Searching Jooble for: {query}")
     try:
-        # Increased timeout to 15s
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response = requests.post(url, headers=headers, json=payload, timeout=7)
         if not response.ok:
             logger.warning(f"Jooble API returned status {response.status_code}")
             return []
@@ -444,7 +433,7 @@ def get_jobs_jooble(query: str, filters: dict = None) -> list:
         normalized = []
         for job in jobs:
             normalized.append({
-                "job_id": str(job.get("id", generate_stable_id(job.get("link")))),
+                "job_id": str(job.get("id", hash(job.get("link")))),
                 "job_title": job.get("title", "N/A"),
                 "employer_name": job.get("company", "Unknown"),
                 "job_city": job.get("location", "N/A"),
@@ -453,7 +442,7 @@ def get_jobs_jooble(query: str, filters: dict = None) -> list:
                 "job_posted_at": job.get("updated", "N/A"),
                 "job_description": job.get("snippet", ""),
                 "job_apply_link": job.get("link", None),
-                "remote": False,
+                "remote": False, # Not explicitly returned usually
                 "source": "Jooble"
             })
         return normalized
@@ -463,19 +452,23 @@ def get_jobs_jooble(query: str, filters: dict = None) -> list:
 
 # New Integration: Authentic Jobs (RSS)
 def get_jobs_authentic(query: str, filters: dict = None) -> list:
-    # URL update: Try the main feed which is generally more reliable
-    url = "https://authenticjobs.com/?feed=job_feed"
+    # Uses feedparser
+    try:
+        import feedparser
+    except ImportError:
+        logger.error("feedparser not installed")
+        return []
+        
+    # Official RSS feed: https://authenticjobs.com/feed/
+    # We can't easily filter strictly by server-side query on RSS without fetching all
+    # But usually RSS has query params, Authentic Jobs seems not to document search params for RSS well,
+    # often it's just categories.
+    # However, let's fetch the main feed and client-side filter.
+    url = "https://authenticjobs.com/feed/"
     
     logger.info(f"Fetching Authentic Jobs RSS")
     try:
-        # Using requests first to control timeout
-        response = requests.get(url, timeout=15)
-        
-        if not response.ok:
-             logger.warning(f"Authentic Jobs RSS returned {response.status_code}")
-             return []
-             
-        feed = feedparser.parse(response.content)
+        feed = feedparser.parse(url)
         entries = feed.entries
         logger.info(f"Authentic Jobs RSS returned {len(entries)} entries")
         
@@ -483,91 +476,33 @@ def get_jobs_authentic(query: str, filters: dict = None) -> list:
         filtered = []
         
         for entry in entries:
-            # RELAXED FILTERING: Match ANY word, not ALL words
-            # Also check text more broadly
+            # Basic client-side filtering
             search_text = (entry.title + " " + entry.description).lower()
-            
-            # If query is very generic (e.g. 'python'), require it.
-            # If multi-word, at least one major keyword should match.
-            matches = [word for word in query_words if word in search_text]
-            if matches:
+            if all(word in search_text for word in query_words):
                 filtered.append(entry)
                 
         logger.info(f"Authentic Jobs matched {len(filtered)} entries locally")
         
         normalized = []
         for job in filtered:
+            # RSS fields map loosely
             normalized.append({
                 "job_id": job.get("id", job.link),
                 "job_title": job.title,
-                "employer_name": "Unknown",
-                "job_city": "Remote",
+                "employer_name": "Unknown", # Often in title "Company: Role" or summary
+                "job_city": "Remote", # Authentic Jobs is heavy on creative/web/remote
                 "job_country": "Remote",
-                "job_employment_type": "Full-time",
+                "job_employment_type": "Full-time", # Assumption
                 "job_posted_at": job.get("published", "N/A"),
                 "job_description": job.description,
                 "job_apply_link": job.link,
-                "remote": True,
+                "remote": True, # Assumption for this feed usually
                 "source": "Authentic Jobs"
             })
         return normalized
     except Exception as e:
         logger.error(f"Authentic Jobs fetch error: {e}")
         return []
-
-def filter_jobs_by_date(jobs: list, max_days: int = 2) -> list:
-    """
-    Filter jobs to only include those posted within the last max_days days.
-    
-    Args:
-        jobs: List of job dictionaries
-        max_days: Maximum age of jobs in days (default: 2)
-    
-    Returns:
-        Filtered list of jobs
-    """
-    from dateutil import parser as date_parser
-    
-    now = datetime.datetime.utcnow()
-    cutoff_date = now - datetime.timedelta(days=max_days)
-    
-    filtered_jobs = []
-    for job in jobs:
-        job_posted_at = job.get("job_posted_at", "N/A")
-        
-        # Skip jobs without valid dates
-        if not job_posted_at or job_posted_at == "N/A":
-            continue
-        
-        try:
-            # Parse the date - handles various formats (ISO, UNIX timestamp, etc.)
-            if isinstance(job_posted_at, str):
-                # Try parsing as ISO format or other common date formats
-                job_date = date_parser.parse(job_posted_at)
-            elif isinstance(job_posted_at, (int, float)):
-                # Handle UNIX timestamps
-                job_date = datetime.datetime.utcfromtimestamp(job_posted_at)
-            else:
-                # Skip if we can't parse
-                continue
-            
-            # Make timezone-naive for comparison
-            if job_date.tzinfo is not None:
-                job_date = job_date.replace(tzinfo=None)
-            
-            # Check if job is within the date range
-            if job_date >= cutoff_date:
-                filtered_jobs.append(job)
-            else:
-                logger.debug(f"Filtered out job '{job.get('job_title')}' posted on {job_posted_at} (older than {max_days} days)")
-                
-        except Exception as e:
-            # If we can't parse the date, include the job to be safe
-            logger.warning(f"Could not parse date '{job_posted_at}' for job '{job.get('job_title')}': {e}")
-            filtered_jobs.append(job)
-    
-    return filtered_jobs
-
 
 def get_all_jobs(query: str, filters: dict = None) -> list:
     logger.info(f"Aggregating jobs for query: '{query}' with filters: {filters}")
@@ -612,9 +547,4 @@ def get_all_jobs(query: str, filters: dict = None) -> list:
     jobs.extend(authentic_jobs)
     
     logger.info(f"Total jobs aggregated: {len(jobs)}")
-    
-    # Filter jobs to only include those posted within the last 2 days
-    jobs = filter_jobs_by_date(jobs, max_days=2)
-    logger.info(f"Jobs after date filtering (last 2 days): {len(jobs)}")
-    
     return jobs
