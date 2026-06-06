@@ -5,7 +5,7 @@ from django.utils.text import slugify
 from .user_context import get_user_context
 from bot.models import CareerPathCache
 from urllib.parse import quote
-from mistralai import Mistral
+from groq import Groq
 
 
 def resolve_career_path(job_title: str):
@@ -31,14 +31,14 @@ def resolve_career_path(job_title: str):
 
 
 def fetch_career_path_ai(job_title):
-    api_key = os.getenv("MISTRAL_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        print("❌ No MISTRAL_API_KEY found.")
+        print("❌ No GROQ_API_KEY found.")
         return None
 
     try:
-        client = Mistral(api_key=api_key)
-        model = "mistral-small-latest"
+        client = Groq(api_key=api_key)
+        model = "llama-3.3-70b-versatile"
 
         prompt = (
             f"You are a career taxonomy assistant.\n"
@@ -48,14 +48,17 @@ def fetch_career_path_ai(job_title):
             f"  \"narrower\": [\"...\"],\n"
             f"  \"related\": [\"...\"]\n"
             f"}}\n"
-            f"Only return valid JSON. No explanation. Avoid markdown fencing."
+            f"Only return valid JSON. Do not include any explanations or markdown formatting."
         )
 
         messages = [{"role": "user", "content": prompt}]
-        response = client.chat.complete(model=model, messages=messages)
+        response = client.chat.completions.create(
+            model=model, 
+            messages=messages,
+            response_format={"type": "json_object"}
+        )
 
         content = response.choices[0].message.content.strip()
-        content = content.strip("```json").strip("```").strip()
         return json.loads(content)
 
     except Exception as e:

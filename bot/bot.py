@@ -24,21 +24,20 @@ from bot.functions.jobs import get_jobs, get_jobs_arbeitnow, get_all_jobs
 from telegram.constants import ParseMode
 from telegram.constants import UpdateType
 from bot.cv_builder import get_cv_handler
-from django.db import transaction
+from django.db import transaction, close_old_connections, OperationalError
+from tenacity import retry, stop_after_attempt, wait_exponential
 import asyncio
 from bot.services.career_path import get_career_path_data, resolve_career_path
 from bot.services.upskill import get_upskill_plan
 from bot.improve import generate_cover_letter, review_cv
 from bot.services.interview import handle_interview_practice, cancel_session, get_active_session
 
+from .bot_link_commands import AccountLinkMixin
+from .constants import FREE_SEARCH_LIMIT, FREE_ALERT_LIMIT, PREMIUM_ALERT_LIMIT
+
 logger = logging.getLogger(__name__)
 
-# Global constants
-FREE_SEARCH_LIMIT = 25
-FREE_ALERT_LIMIT = 5
-PREMIUM_ALERT_LIMIT = 20
-
-class JobSearchBot:
+class JobSearchBot(AccountLinkMixin):
     def __init__(self):
         self.application = (
             Application.builder()
@@ -178,30 +177,59 @@ class JobSearchBot:
 
     # Database helper methods
     @staticmethod
-    @sync_to_async
-    def get_user(user_id):
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
+    def _get_user_sync(user_id):
         try:
+            close_old_connections()
             return User.objects.get(user_id=user_id)
         except User.DoesNotExist:
             return None
+        except OperationalError:
+            close_old_connections()
+            raise
+
+    @staticmethod
+    @sync_to_async
+    def get_user(user_id):
+        return JobSearchBot._get_user_sync(user_id)
+
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
+    def _create_user_sync(user_id, username):
+        try:
+            close_old_connections()
+            return User.objects.get_or_create(
+                user_id=user_id,
+                defaults={'username': username}
+            )
+        except OperationalError:
+            close_old_connections()
+            raise
 
     @staticmethod
     @sync_to_async
     def create_user(user_id, username):
-        return User.objects.get_or_create(
-            user_id=user_id,
-            defaults={'username': username}
-        )
+        return JobSearchBot._create_user_sync(user_id, username)
         
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
+    def _get_user_or_create_sync(telegram_user_id, telegram_username):
+        try:
+            close_old_connections()
+            user, _ = User.objects.get_or_create(
+                user_id=telegram_user_id,
+                defaults={
+                    "username": telegram_username or "",
+                }
+            )
+            return user
+        except OperationalError:
+            close_old_connections()
+            raise
+
     @sync_to_async
     def get_user_or_create(self, telegram_user):
-        user, _ = User.objects.get_or_create(
-            user_id=telegram_user.id,
-            defaults={
-                "username": telegram_user.username or "",
-            }
-        )
-        return user
+        return JobSearchBot._get_user_or_create_sync(telegram_user.id, telegram_user.username)
         
     async def cv_review_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_interview_lock(update, context): return
@@ -1189,142 +1217,5 @@ class JobSearchBot:
             parse_mode=ParseMode.MARKDOWN
         )
     
-    async def link_account_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Generate a code to link Telegram account to web profile"""
-        if await self.check_interview_lock(update, context): return
-        
-        user_id = str(update.effective_user.id)
-        username = update.effective_user.username
-        
-        # First try to find existing user by user_id or telegram_id
-        platform_user = await sync_to_async(
-            User.objects.select_related('tenant_user__tenant').filter(user_id=user_id).first
-        )()
-        
-        if not platform_user:
-            # Try by telegram_id
-            platform_user = await sync_to_async(
-                User.objects.select_related('tenant_user__tenant').filter(telegram_id=user_id).first
-            )()
-        
-        if not platform_user:
-            # Create new user
-            platform_user = await sync_to_async(User.objects.create)(
-                user_id=user_id,
-                telegram_id=user_id,
-                username=username,
-                platform_type='telegram'
-            )
-        else:
-            # Update telegram_id if not set
-            if not platform_user.telegram_id:
-                platform_user.telegram_id = user_id
-                platform_user.username = username
-                await sync_to_async(platform_user.save)()
-        
-        # Check if already linked
-        if platform_user.tenant_user:
-            await update.message.reply_text(
-                f"✅ *Account Already Linked*\\n\\n"
-                f"Your Telegram account is linked to:\\n"
-                f"📧 {platform_user.tenant_user.email}\\n"
-                f"🏢 {platform_user.tenant_user.tenant.name}\\n\\n"
-                f"Use /unlink to disconnect.",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
-        
-        # Generate link code
-        code = await sync_to_async(platform_user.generate_link_code)()
-        
-        await update.message.reply_text(
-            f"🔗 *Link Your Account*\\n\\n"
-            f"Your linking code: `{code}`\\n\\n"
-            f"⏰ This code expires in 15 minutes.\\n\\n"
-            f"*To link your account:*\\n"
-            f"1. Go to https://job.pluggedspace.org/settings/link\\n"
-            f"2. Enter this code\\n"
-            f"3. Your Telegram and web accounts will be linked!\\n\\n"
-            f"*Benefits:*\\n"
-            f"✅ Unified job alerts across platforms\\n"
-            f"✅ Shared subscription status\\n"
-            f"✅ Access your data from web or Telegram\\n"
-            f"✅ Sync your CV and saved jobs",
-            parse_mode=ParseMode.MARKDOWN
-        )
-    
-    async def unlink_account_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Unlink Telegram account from web profile"""
-        if await self.check_interview_lock(update, context): return
-        
-        user_id = str(update.effective_user.id)
-        
-        try:
-            platform_user = await sync_to_async(User.objects.select_related('tenant_user').get)(telegram_id=user_id)
-        except User.DoesNotExist:
-            await update.message.reply_text(
-                "❌ No Telegram account found. Use /start to register first."
-            )
-            return
-        
-        if not platform_user.tenant_user:
-            await update.message.reply_text(
-                "ℹ️ Your Telegram account is not linked to any web profile.\\n\\n"
-                "Use /link to link your account.",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
-        
-        # Store email for confirmation message
-        email = platform_user.tenant_user.email
-        
-        # Unlink
-        platform_user.tenant_user = None
-        await sync_to_async(platform_user.save)()
-        
-        await update.message.reply_text(
-            f"✅ *Account Unlinked*\\n\\n"
-            f"Your Telegram account has been disconnected from:\\n"
-            f"📧 {email}\\n\\n"
-            f"You can link to a different account anytime using /link",
-            parse_mode=ParseMode.MARKDOWN
-        )
-    
-    async def account_info_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show account information and linking status"""
-        if await self.check_interview_lock(update, context): return
-        
-        user_id = str(update.effective_user.id)
-        
-        try:
-            platform_user = await sync_to_async(User.objects.select_related('tenant_user__tenant').get)(telegram_id=user_id)
-        except User.DoesNotExist:
-            await update.message.reply_text(
-                "❌ No account found. Use /start to register first."
-            )
-            return
-        
-        # Build account info message
-        message = f"👤 *Your Account Info*\\n\\n"
-        message += f"*Telegram:*\\n"
-        message += f"• Username: @{platform_user.username or 'Not set'}\\n"
-        message += f"• User ID: `{platform_user.telegram_id}`\\n"
-        message += f"• Subscription: {platform_user.subscription_status}\\n"
-        message += f"• Searches: {platform_user.search_count}/{FREE_SEARCH_LIMIT}\\n\\n"
-        
-        if platform_user.tenant_user:
-            message += f"*🔗 Linked Web Account:*\\n"
-            message += f"• Email: {platform_user.tenant_user.email}\\n"
-            message += f"• Name: {platform_user.tenant_user.full_name or 'Not set'}\\n"
-            message += f"• Organization: {platform_user.tenant_user.tenant.name}\\n"
-            message += f"• Role: {platform_user.tenant_user.role.title()}\\n\\n"
-            message += f"Use /unlink to disconnect"
-        else:
-            message += f"*🔗 Account Linking:*\\n"
-            message += f"Not linked to any web account\\n\\n"
-            message += f"Use /link to link your account"
-        
-        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
-
     def run(self):
         self.application.run_polling()

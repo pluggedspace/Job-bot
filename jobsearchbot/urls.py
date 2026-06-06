@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 
 from django.contrib.sitemaps.views import sitemap
-from bot.views import telegram_webhook, paystack_callback, flutterwave_callback
+from bot.views import telegram_webhook, paystack_callback, flutterwave_callback, health_check
 from bot.sitemaps import StaticViewSitemap
 from bot.views import robots_txt  # 👈 Create this view as shown below
 
@@ -11,6 +11,8 @@ sitemaps_dict = {
 }
 
 urlpatterns = [
+    path('', health_check, name='root'),
+    path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/', include('bot.api.urls')),  # API endpoints
     path('webhook/', telegram_webhook, name='telegram_webhook'),

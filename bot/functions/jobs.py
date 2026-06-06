@@ -4,6 +4,8 @@ from django.conf import settings
 import datetime
 import feedparser
 import hashlib
+import re
+from dateutil import parser as date_parser
 
 logger = logging.getLogger(__name__)
 
@@ -347,6 +349,9 @@ def get_jobs_careerjet(query: str, filters: dict = None) -> list:
     try:
         # Increased timeout to 15s
         response = requests.get(url, params=params, auth=auth, timeout=15)
+        if response.status_code == 403:
+            logger.error("Careerjet API access forbidden - check API key or IP whitelist")
+            return []
         if not response.ok:
             logger.warning(f"Careerjet API returned status {response.status_code}")
             return []
@@ -471,6 +476,9 @@ def get_jobs_authentic(query: str, filters: dict = None) -> list:
         # Using requests first to control timeout
         response = requests.get(url, timeout=15)
         
+        if response.status_code == 403:
+            logger.error("Authentic Jobs RSS access forbidden (403)")
+            return []
         if not response.ok:
              logger.warning(f"Authentic Jobs RSS returned {response.status_code}")
              return []
@@ -515,6 +523,35 @@ def get_jobs_authentic(query: str, filters: dict = None) -> list:
         logger.error(f"Authentic Jobs fetch error: {e}")
         return []
 
+def parse_relative_date(date_string: str) -> datetime.datetime:
+    """Parse dates like '15 hours ago', '5 days ago', '2 minutes ago'"""
+    if not isinstance(date_string, str):
+        return None
+        
+    date_string = date_string.lower()
+    now = datetime.datetime.utcnow()
+    
+    match = re.search(r'(\d+)\s+(hour|day|minute|week|month)s?\s+ago', date_string)
+    if match:
+        value = int(match.group(1))
+        unit = match.group(2)
+        
+        if unit == 'hour':
+            return now - datetime.timedelta(hours=value)
+        elif unit == 'day':
+            return now - datetime.timedelta(days=value)
+        elif unit == 'minute':
+            return now - datetime.timedelta(minutes=value)
+        elif unit == 'week':
+            return now - datetime.timedelta(weeks=value)
+        elif unit == 'month':
+            return now - datetime.timedelta(days=value * 30) # Approximation
+            
+    try:
+        return date_parser.parse(date_string)
+    except:
+        return None
+
 def filter_jobs_by_date(jobs: list, max_days: int = 2) -> list:
     """
     Filter jobs to only include those posted within the last max_days days.
@@ -526,8 +563,6 @@ def filter_jobs_by_date(jobs: list, max_days: int = 2) -> list:
     Returns:
         Filtered list of jobs
     """
-    from dateutil import parser as date_parser
-    
     now = datetime.datetime.utcnow()
     cutoff_date = now - datetime.timedelta(days=max_days)
     
@@ -540,15 +575,18 @@ def filter_jobs_by_date(jobs: list, max_days: int = 2) -> list:
             continue
         
         try:
-            # Parse the date - handles various formats (ISO, UNIX timestamp, etc.)
+            job_date = None
+            # Parse the date - handles various formats (ISO, UNIX timestamp, relative etc.)
             if isinstance(job_posted_at, str):
-                # Try parsing as ISO format or other common date formats
-                job_date = date_parser.parse(job_posted_at)
+                # Try relative date parsing first
+                job_date = parse_relative_date(job_posted_at)
             elif isinstance(job_posted_at, (int, float)):
                 # Handle UNIX timestamps
                 job_date = datetime.datetime.utcfromtimestamp(job_posted_at)
-            else:
+            
+            if not job_date:
                 # Skip if we can't parse
+                logger.warning(f"Could not parse date format '{job_posted_at}' for job '{job.get('job_title')}'")
                 continue
             
             # Make timezone-naive for comparison
@@ -563,7 +601,7 @@ def filter_jobs_by_date(jobs: list, max_days: int = 2) -> list:
                 
         except Exception as e:
             # If we can't parse the date, include the job to be safe
-            logger.warning(f"Could not parse date '{job_posted_at}' for job '{job.get('job_title')}': {e}")
+            logger.warning(f"Error processing date '{job_posted_at}' for job '{job.get('job_title')}': {e}")
             filtered_jobs.append(job)
     
     return filtered_jobs

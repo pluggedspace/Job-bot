@@ -1,17 +1,17 @@
 import os
-from mistralai import Mistral
+from groq import Groq
 from bot.services.user_context import get_user_context
 from bot.models import InterviewSession, InterviewResponse
 from asgiref.sync import sync_to_async
 
-# Initialize AI
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-client = Mistral(api_key=MISTRAL_API_KEY)
+# Initialize Groq
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+client = Groq(api_key=GROQ_API_KEY)
 
 def ai_prompt(prompt: str) -> str:
     try:
-        response = client.chat.complete(
-            model="mistral-small-latest",
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": "You are a helpful and concise assistant."},
                 {"role": "user", "content": prompt.strip()}

@@ -1,0 +1,5 @@
+# bot/constants.py
+
+FREE_SEARCH_LIMIT = 25
+FREE_ALERT_LIMIT = 5
+PREMIUM_ALERT_LIMIT = 20

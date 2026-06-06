@@ -1,17 +1,17 @@
 import os
 import json
-from mistralai import Mistral
+from groq import Groq
 
 # Replace this function to use AI
 def query_ai_for_upskill_path(role):
-    api_key = os.getenv("MISTRAL_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        print("❌ No MISTRAL_API_KEY found.")
+        print("❌ No GROQ_API_KEY found.")
         return None
 
     try:
-        client = Mistral(api_key=api_key)
-        model = "mistral-small-latest"
+        client = Groq(api_key=api_key)
+        model = "llama-3.3-70b-versatile"
 
         prompt = (
             f"You are a career coach AI.\n"
@@ -23,20 +23,19 @@ def query_ai_for_upskill_path(role):
             f"    {{\"name\": \"Skill Name\", \"course\": {{\"title\": \"Course Title\", \"url\": \"https://...\"}} }},\n"
             f"    ... (5 total)\n"
             f"  ]\n"
-            f"}}"
+            f"}}\n"
+            f"Do not include markdown formatting."
         )
 
         messages = [{"role": "user", "content": prompt}]
-        response = client.chat.complete(model=model, messages=messages)
+        response = client.chat.completions.create(
+            model=model, 
+            messages=messages,
+            response_format={"type": "json_object"}
+        )
 
         # Extract and parse JSON from the response
         text = response.choices[0].message.content.strip()
-        # Handle potential markdown code blocks
-        if "```" in text:
-            text = text.split("```json")[-1].split("```")[0].strip()
-        elif "```" in text: # fallback if json tag missing
-            text = text.split("```")[-1].split("```")[0].strip()
-            
         return json.loads(text)
 
     except Exception as e:

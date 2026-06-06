@@ -16,7 +16,7 @@ def create_paystack_payment(email: str, amount: int, reference: str = None) -> d
     data = {
         "email": email,
         "amount": amount * 100,
-        "callback_url": "https://yourdomain.com/callback/"
+        "callback_url": "https://api.job.pluggedspace.org/callback/"
     }
     if reference:
         data["reference"] = reference
@@ -66,7 +66,7 @@ def create_flutterwave_payment(email: str, amount: float, currency: str = "USD",
         "tx_ref": reference,
         "amount": str(amount),
         "currency": currency,
-        "redirect_url": "https://api.pluggedspace.org/job/api/flutterwave/callback/",
+        "redirect_url": "https://api.job.pluggedspace.org/api/flutterwave/callback/",
         "customer": {
             "email": email
         },

@@ -1,3 +1,16 @@
+import logging
+from telegram import Update
+from telegram.ext import ContextTypes
+from telegram.constants import ParseMode
+from asgiref.sync import sync_to_async
+from bot.models import User
+from .constants import FREE_SEARCH_LIMIT
+
+logger = logging.getLogger(__name__)
+
+class AccountLinkMixin:
+    """Mixin for account linking commands in the Telegram bot."""
+
     async def link_account_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Generate a code to link Telegram account to web profile"""
         if await self.check_interview_lock(update, context): return
@@ -23,10 +36,10 @@
         # Check if already linked
         if platform_user.tenant_user:
             await update.message.reply_text(
-                f"✅ *Account Already Linked*\\n\\n"
-                f"Your Telegram account is linked to:\\n"
-                f"📧 {platform_user.tenant_user.email}\\n"
-                f"🏢 {platform_user.tenant_user.tenant.name}\\n\\n"
+                f"✅ *Account Already Linked*\n\n"
+                f"Your Telegram account is linked to:\n"
+                f"📧 {platform_user.tenant_user.email}\n"
+                f"🏢 {platform_user.tenant_user.tenant.name}\n\n"
                 f"Use /unlink to disconnect.",
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -36,17 +49,17 @@
         code = await sync_to_async(platform_user.generate_link_code)()
         
         await update.message.reply_text(
-            f"🔗 *Link Your Account*\\n\\n"
-            f"Your linking code: `{code}`\\n\\n"
-            f"⏰ This code expires in 15 minutes.\\n\\n"
-            f"*To link your account:*\\n"
-            f"1. Go to https://api.pluggedspace.org/job/settings/link\\n"
-            f"2. Enter this code\\n"
-            f"3. Your Telegram and web accounts will be linked!\\n\\n"
-            f"*Benefits:*\\n"
-            f"✅ Unified job alerts across platforms\\n"
-            f"✅ Shared subscription status\\n"
-            f"✅ Access your data from web or Telegram\\n"
+            f"🔗 *Link Your Account*\n\n"
+            f"Your linking code: `{code}`\n\n"
+            f"⏰ This code expires in 15 minutes.\n\n"
+            f"*To link your account:*\n"
+            f"1. Go to https://job.pluggedspace.org/settings/link \n"
+            f"2. Enter this code\n"
+            f"3. Your Telegram and web accounts will be linked!\n\n"
+            f"*Benefits:*\n"
+            f"✅ Unified job alerts across platforms\n"
+            f"✅ Shared subscription status\n"
+            f"✅ Access your data from web or Telegram\n"
             f"✅ Sync your CV and saved jobs",
             parse_mode=ParseMode.MARKDOWN
         )
@@ -58,7 +71,7 @@
         user_id = str(update.effective_user.id)
         
         try:
-            platform_user = await sync_to_async(User.objects.get)(telegram_id=user_id)
+            platform_user = await sync_to_async(User.objects.select_related('tenant_user').get)(telegram_id=user_id)
         except User.DoesNotExist:
             await update.message.reply_text(
                 "❌ No Telegram account found. Use /start to register first."
@@ -67,7 +80,7 @@
         
         if not platform_user.tenant_user:
             await update.message.reply_text(
-                "ℹ️ Your Telegram account is not linked to any web profile.\\n\\n"
+                "ℹ️ Your Telegram account is not linked to any web profile.\n\n"
                 "Use /link to link your account.",
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -81,9 +94,9 @@
         await sync_to_async(platform_user.save)()
         
         await update.message.reply_text(
-            f"✅ *Account Unlinked*\\n\\n"
-            f"Your Telegram account has been disconnected from:\\n"
-            f"📧 {email}\\n\\n"
+            f"✅ *Account Unlinked*\n\n"
+            f"Your Telegram account has been disconnected from:\n"
+            f"📧 {email}\n\n"
             f"You can link to a different account anytime using /link",
             parse_mode=ParseMode.MARKDOWN
         )
@@ -95,7 +108,7 @@
         user_id = str(update.effective_user.id)
         
         try:
-            platform_user = await sync_to_async(User.objects.get)(telegram_id=user_id)
+            platform_user = await sync_to_async(User.objects.select_related('tenant_user__tenant').get)(telegram_id=user_id)
         except User.DoesNotExist:
             await update.message.reply_text(
                 "❌ No account found. Use /start to register first."
@@ -103,26 +116,23 @@
             return
         
         # Build account info message
-        message = f"👤 *Your Account Info*\\n\\n"
-        message += f"*Telegram:*\\n"
-        message += f"• Username: @{platform_user.username or 'Not set'}\\n"
-        message += f"• User ID: `{platform_user.telegram_id}`\\n"
-        message += f"• Subscription: {platform_user.subscription_status}\\n"
-        message += f"• Searches: {platform_user.search_count}/{FREE_SEARCH_LIMIT}\\n\\n"
+        message = f"👤 *Your Account Info*\n\n"
+        message += f"*Telegram:*\n"
+        message += f"• Username: @{platform_user.username or 'Not set'}\n"
+        message += f"• User ID: `{platform_user.telegram_id}`\n"
+        message += f"• Subscription: {platform_user.subscription_status}\n"
+        message += f"• Searches: {platform_user.search_count}/{FREE_SEARCH_LIMIT}\n\n"
         
         if platform_user.tenant_user:
-            message += f"*🔗 Linked Web Account:*\\n"
-            message += f"• Email: {platform_user.tenant_user.email}\\n"
-            message += f"• Name: {platform_user.tenant_user.full_name or 'Not set'}\\n"
-            message += f"• Organization: {platform_user.tenant_user.tenant.name}\\n"
-            message += f"• Role: {platform_user.tenant_user.role.title()}\\n\\n"
+            message += f"*🔗 Linked Web Account:*\n"
+            message += f"• Email: {platform_user.tenant_user.email}\n"
+            message += f"• Name: {platform_user.tenant_user.full_name or 'Not set'}\n"
+            message += f"• Organization: {platform_user.tenant_user.tenant.name}\n"
+            message += f"• Role: {platform_user.tenant_user.role.title()}\n\n"
             message += f"Use /unlink to disconnect"
         else:
-            message += f"*🔗 Account Linking:*\\n"
-            message += f"Not linked to any web account\\n\\n"
+            message += f"*🔗 Account Linking:*\n"
+            message += f"Not linked to any web account\n\n"
             message += f"Use /link to link your account"
         
         await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
-
-    def run(self):
-        self.application.run_polling()

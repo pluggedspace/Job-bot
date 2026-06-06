@@ -2,21 +2,21 @@ import json
 import os
 from typing import Optional
 from bot.models import User
-from mistralai import Mistral
+from groq import Groq
 
 # Load AI API Key securely
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-if not MISTRAL_API_KEY:
-    raise ValueError("Missing MISTRAL_API_KEY environment variable")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise ValueError("Missing GROQ_API_KEY environment variable")
 
-# Initialize AI Client
-client = Mistral(api_key=MISTRAL_API_KEY)
-MODEL = "mistral-tiny"  # You can change to mistral-small or mistral-medium
+# Initialize Groq Client
+client = Groq(api_key=GROQ_API_KEY)
+MODEL = "llama-3.3-70b-versatile"
 
 
 def call_ai(prompt: str, system_prompt: str = "You are a helpful assistant.") -> str:
     """
-    Sends a prompt to Mistral and returns the generated response text.
+    Sends a prompt to Groq and returns the generated response text.
     """
     messages = [
         {"role": "system", "content": system_prompt},
@@ -24,7 +24,7 @@ def call_ai(prompt: str, system_prompt: str = "You are a helpful assistant.") ->
     ]
 
     try:
-        response = client.chat.complete(
+        response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
             temperature=0.7,

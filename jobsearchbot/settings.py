@@ -1,43 +1,45 @@
-
 # Environment variables
 import os
-from dotenv import load_dotenv
-load_dotenv()
-
-
 from pathlib import Path
+
+# Load .env file for local development (no-op inside Docker where env vars are injected)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not required in production
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 import sentry_sdk
 
-sentry_sdk.init(
-    dsn="https://54986ea6325bdd5418be596f02d0af23@o4510335818334208.ingest.de.sentry.io/4510420820885584",
-    # Add data like request headers and IP for users,
-    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-    send_default_pii=True,
-)
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        send_default_pii=True,
+    )
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-0mq1)2+s&w#p*cs10aq7+!)ywi2)r$zjpv!ktqmqkqun2*4x*e'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ["api.pluggedspace.org", "job-web", "job.pluggedspace.org", "45.77.138.21"]
+ALLOWED_HOSTS = ["api.job.pluggedspace.org", "job-web", "job.pluggedspace.org", "45.77.226.170", "localhost", "127.0.0.1"]
 
-FORCE_SCRIPT_NAME = "/job"
+# FORCE_SCRIPT_NAME = "/job"
 
 USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SESSION_COOKIE_PATH = "/job/"
-CSRF_COOKIE_PATH = "/job/"
+SESSION_COOKIE_PATH = "/"
+CSRF_COOKIE_PATH = "/"
 SESSION_COOKIE_NAME = 'job_sessionid'
 CSRF_COOKIE_NAME = 'job_csrftoken'
 
@@ -57,6 +59,7 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'django_celery_results',
     'bot',
+    'backup',
 ]
 
 MIDDLEWARE = [
@@ -69,6 +72,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'jobsearchbot.middleware.DatabaseConnectionMiddleware',
 ]
 
 ROOT_URLCONF = 'jobsearchbot.urls'
@@ -91,7 +95,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'jobsearchbot.wsgi.application'
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://api.pluggedspace.org",
+    "https://api.job.pluggedspace.org",
 ]
 
 REST_FRAMEWORK = {
@@ -113,25 +117,26 @@ REST_FRAMEWORK = {
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# PostgreSQL Configuration
+# MySQL Configuration
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB', 'jobbot'),
-        'USER': os.getenv('POSTGRES_USER', 'jobbot'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'JoBB0t'),
-        'HOST': os.getenv('POSTGRES_HOST', 'db'),
-        'PORT': os.getenv('POSTGRES_PORT', '5432'),
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv('MYSQL_DB', 'jobbot'),
+        'USER': os.getenv('MYSQL_USER', 'jobbot'),
+        'PASSWORD': os.getenv('MYSQL_PASSWORD', 'JoBB0t'),
+        'HOST': os.getenv('MYSQL_HOST', 'db01'),
+        'PORT': os.getenv('MYSQL_PORT', '3306'),
         # Connection pooling for async operations
-        'CONN_MAX_AGE': 60,  # Keep connections alive for 60 seconds
+        'CONN_MAX_AGE': 600,  # Keep connections alive for 10 minutes
         'CONN_HEALTH_CHECKS': True,  # Check connection health before each use (crucial for async/threads)
         'OPTIONS': {
             'connect_timeout': 10,
-            'options': '-c statement_timeout=30000',  # 30 second query timeout
+            'read_timeout': 30,
+            'write_timeout': 30,
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
         },
         'ATOMIC_REQUESTS': False,  # Important for async operations
         'AUTOCOMMIT': True,
-        'DISABLE_SERVER_SIDE_CURSORS': True,  # Prevent cursor issues in thread pools
     }
 }
 
@@ -174,18 +179,18 @@ STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
-STATIC_URL = "/job/static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 if not DEBUG:
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 STATICFILES_DIRS = [
-    BASE_DIR / "/job/static/",
+    BASE_DIR / "static",
 ]
 
 
-MEDIA_URL = "/job/media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 
@@ -194,10 +199,16 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
+DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
+PAYSTACK_TEST_KEY = os.getenv("PAYSTACK_TEST")
+
+# AI / LLM Keys
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 # Flutterwave Configuration
 FLUTTERWAVE_PUBLIC_KEY = os.getenv("FLUTTERWAVE_PUBLIC_KEY")
@@ -221,7 +232,7 @@ CELERY_BEAT_SCHEDULE = {
 
 # CORS Configuration for Next.js Frontend
 CORS_ALLOWED_ORIGINS = [
-    "https://api.pluggedspace.org",
+    "https://api.job.pluggedspace.org",
     "https://job.pluggedspace.org",
 ]
 CORS_ALLOW_CREDENTIALS = True

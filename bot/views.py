@@ -29,11 +29,24 @@ def telegram_webhook(request):
 
 @csrf_exempt
 def paystack_callback(request):
+    """Handle Paystack payment callback (GET for redirect, POST for webhook)"""
+    if request.method == 'GET':
+        reference = request.GET.get('reference')
+        # Here we can optionally verify immediately, but typically we redirect to FE
+        # which will then call the /verify endpoint.
+        return redirect(f'https://job.pluggedspace.org/dashboard/subscription?status=success&reference={reference}&provider=paystack')
+    
     if request.method == 'POST':
-        data = json.loads(request.body)
-        reference = data.get('reference')
-        # Implement your callback logic here
+        # Webhook handling logic would go here
+        try:
+            data = json.loads(request.body)
+            reference = data.get('data', {}).get('reference')
+            logger.info(f"Paystack Webhook received for reference: {reference}")
+        except Exception as e:
+            logger.error(f"Paystack webhook error: {e}")
+            
         return JsonResponse({'status': 'success'})
+    
     return JsonResponse({'status': 'error'}, status=400)
 
 
@@ -63,9 +76,14 @@ def robots_txt(request):
     lines = [
         "User-Agent: *",
         "Disallow:",
-        "Sitemap: https://api.pluggedspace.org/job/sitemap.xml",
+        "Sitemap: https://api.job.pluggedspace.org/sitemap.xml",
     ]
     return HttpResponse("\n".join(lines), content_type="text/plain")
+
+
+@csrf_exempt
+def health_check(request):
+    return JsonResponse({"status": "ok", "message": "Academy Backend is running!"})
 
 
 
