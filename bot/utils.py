@@ -16,7 +16,7 @@ def create_paystack_payment(email: str, amount: int, reference: str = None) -> d
     data = {
         "email": email,
         "amount": amount * 100,
-        "callback_url": "https://api.job.pluggedspace.org/callback/"
+        "callback_url": f"{getattr(settings, 'PUBLIC_API_URL', 'http://localhost:8000')}/callback/",
     }
     if reference:
         data["reference"] = reference
@@ -66,14 +66,13 @@ def create_flutterwave_payment(email: str, amount: float, currency: str = "USD",
         "tx_ref": reference,
         "amount": str(amount),
         "currency": currency,
-        "redirect_url": "https://api.job.pluggedspace.org/api/flutterwave/callback/",
+        "redirect_url": f"{getattr(settings, 'PUBLIC_API_URL', 'http://localhost:8000')}/api/flutterwave/callback/",
         "customer": {
             "email": email
         },
         "customizations": {
-            "title": "Job Autobot Premium Subscription",
-            "description": "Monthly Premium Subscription",
-            "logo": "https://pluggedspace.org/assets/pluggedspaceicon.png"
+            "title": "Job Bot Premium Subscription",
+            "description": "Premium subscription",
         }
     }
     

@@ -28,6 +28,7 @@ sentry-sdk
 djangorestframework
 django-filter
 django-cors-headers
+drf-spectacular
 
 # Celery & Redis
 django-celery-beat
@@ -36,7 +37,6 @@ celery
 redis
 
 # JWT Authentication & Database
-python-jose[cryptography]
 dj-database-url
 
 # Static files

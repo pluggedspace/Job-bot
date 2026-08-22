@@ -28,9 +28,13 @@ if _sentry_dsn:
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-ALLOWED_HOSTS = ["api.job.pluggedspace.org", "job-web", "job.pluggedspace.org", "45.77.226.170", "localhost", "127.0.0.1"]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
 
 # FORCE_SCRIPT_NAME = "/job"
 
@@ -58,8 +62,8 @@ INSTALLED_APPS = [
     'django_filters',  # Django filters for querying
     'django_celery_beat',
     'django_celery_results',
+    'drf_spectacular',
     'bot',
-    'backup',
 ]
 
 MIDDLEWARE = [
@@ -95,7 +99,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'jobsearchbot.wsgi.application'
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://api.job.pluggedspace.org",
+    origin.strip()
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:8000").split(",")
+    if origin.strip()
 ]
 
 REST_FRAMEWORK = {
@@ -105,9 +111,8 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend'
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'bot.authentication.APIKeyOrJWTAuthentication',
+        'bot.authentication.APITokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -117,26 +122,16 @@ REST_FRAMEWORK = {
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# MySQL Configuration
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('MYSQL_DB', 'jobbot'),
-        'USER': os.getenv('MYSQL_USER', 'jobbot'),
-        'PASSWORD': os.getenv('MYSQL_PASSWORD', 'JoBB0t'),
-        'HOST': os.getenv('MYSQL_HOST', 'db01'),
-        'PORT': os.getenv('MYSQL_PORT', '3306'),
-        # Connection pooling for async operations
-        'CONN_MAX_AGE': 600,  # Keep connections alive for 10 minutes
-        'CONN_HEALTH_CHECKS': True,  # Check connection health before each use (crucial for async/threads)
-        'OPTIONS': {
-            'connect_timeout': 10,
-            'read_timeout': 30,
-            'write_timeout': 30,
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
-        'ATOMIC_REQUESTS': False,  # Important for async operations
-        'AUTOCOMMIT': True,
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('POSTGRES_DB', os.getenv('DATABASE_NAME', 'jobbot')),
+        'USER': os.getenv('POSTGRES_USER', os.getenv('DATABASE_USER', 'jobbot')),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', os.getenv('DATABASE_PASSWORD', 'jobbot')),
+        'HOST': os.getenv('POSTGRES_HOST', os.getenv('DATABASE_HOST', 'localhost')),
+        'PORT': os.getenv('POSTGRES_PORT', os.getenv('DATABASE_PORT', '5432')),
+        'CONN_MAX_AGE': 600,
+        'CONN_HEALTH_CHECKS': True,
     }
 }
 
@@ -199,7 +194,12 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
+API_TOKEN = os.getenv("API_TOKEN")
+ENABLE_PREMIUM = os.getenv("ENABLE_PREMIUM", "true").lower() == "true"
+ENABLE_PAYMENTS = os.getenv("ENABLE_PAYMENTS", "false").lower() == "true"
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", "http://localhost:8000")
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
@@ -230,10 +230,10 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-# CORS Configuration for Next.js Frontend
 CORS_ALLOWED_ORIGINS = [
-    "https://api.job.pluggedspace.org",
-    "https://job.pluggedspace.org",
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    if origin.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
 

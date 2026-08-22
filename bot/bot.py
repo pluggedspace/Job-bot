@@ -32,12 +32,11 @@ from bot.services.upskill import get_upskill_plan
 from bot.improve import generate_cover_letter, review_cv
 from bot.services.interview import handle_interview_practice, cancel_session, get_active_session
 
-from .bot_link_commands import AccountLinkMixin
 from .constants import FREE_SEARCH_LIMIT, FREE_ALERT_LIMIT, PREMIUM_ALERT_LIMIT
 
 logger = logging.getLogger(__name__)
 
-class JobSearchBot(AccountLinkMixin):
+class JobSearchBot:
     def __init__(self):
         self.application = (
             Application.builder()
@@ -66,11 +65,6 @@ class JobSearchBot(AccountLinkMixin):
         self.application.add_handler(CommandHandler("cv_review", self.cv_review_handler))
         self.application.add_handler(CommandHandler("practice", self.interview_practice_handler))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.interview_practice_handler))
-        
-        # Account linking commands
-        self.application.add_handler(CommandHandler("link", self.link_account_command))
-        self.application.add_handler(CommandHandler("unlink", self.unlink_account_command))
-        self.application.add_handler(CommandHandler("account", self.account_info_command))
 
         # Callback handlers
         self.application.add_handler(CallbackQueryHandler(self.handle_subscription_callback, pattern="^sub_currency_"))
@@ -978,14 +972,7 @@ class JobSearchBot(AccountLinkMixin):
                 success = result.get("data", {}).get("status") == "successful"
                 
             if success:
-                # Sync all data if it's a platform user linked to a tenant user
-                from asgiref.sync import sync_to_async
-                from bot.services.account_linking import AccountLinkingService
-                
-                user = await self.update_user_status(user_id, "Paid", ref)
-                if user.tenant_user:
-                    await sync_to_async(AccountLinkingService.sync_all_data)(user.tenant_user)
-                
+                await self.update_user_status(user_id, "Paid", ref)
                 await query.edit_message_text("✅ *Payment Verified!* You are now a Premium user. Enjoy unlimited searches!", parse_mode=ParseMode.MARKDOWN)
             else:
                 await query.edit_message_text("Verification failed or still pending. Please try again later.")

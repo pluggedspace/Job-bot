@@ -1,29 +1,17 @@
 from django.contrib import admin
 from django.urls import path, include
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
-from django.contrib.sitemaps.views import sitemap
-from bot.views import telegram_webhook, paystack_callback, flutterwave_callback, health_check
-from bot.sitemaps import StaticViewSitemap
-from bot.views import robots_txt  # 👈 Create this view as shown below
-
-sitemaps_dict = {
-    'static': StaticViewSitemap,
-}
+from bot.views import telegram_webhook, health_check, status_page, robots_txt
 
 urlpatterns = [
-    path('', health_check, name='root'),
-    path('health/', health_check, name='health_check'),
-    path('admin/', admin.site.urls),
-    path('api/', include('bot.api.urls')),  # API endpoints
-    path('webhook/', telegram_webhook, name='telegram_webhook'),
-    path('callback/', paystack_callback, name='paystack_callback'),
-    path('api/flutterwave/callback/', flutterwave_callback, name='flutterwave_callback'),
-
-    # ✅ Sitemap
-    path('sitemap.xml', sitemap, {'sitemaps': sitemaps_dict}, name='sitemap'),
-
-    # ✅ Robots.txt
-    path('robots.txt', robots_txt, name='robots_txt'),
-
-
+    path("", status_page, name="home"),
+    path("health/", health_check, name="health_check"),
+    path("admin/", admin.site.urls),
+    path("api/", include("bot.api.urls")),
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+    path("webhook/", telegram_webhook, name="telegram_webhook"),
+    path("robots.txt", robots_txt, name="robots_txt"),
 ]

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Bot — Self-Hosted</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    .muted { opacity: 0.7; }
+    code { background: rgba(127,127,127,0.15); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    ul { padding-left: 1.25rem; }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <h1>Job Bot</h1>
+  <p class="muted">Self-hosted job search assistant</p>
+
+  <h2>Status</h2>
+  <p>API is running. Health check: <a href="/health/">/health/</a></p>
+
+  <h2>How to use</h2>
+  <ul>
+    <li><strong>Telegram</strong> — run <code>python manage.py run_bot</code> and chat with your bot</li>
+    <li><strong>WhatsApp</strong> — configure Meta webhook at <code>/api/whatsapp/webhook/</code></li>
+    <li><strong>REST API</strong> — send <code>Authorization: Bearer &lt;API_TOKEN&gt;</code> to <code>/api/</code></li>
+  </ul>
+
+  <h2>API docs</h2>
+  <p>See <code>docs/TECHNICAL_DOCUMENTATION.md</code> in the repository for endpoint reference.</p>
+
+  <h2>Admin</h2>
+  <p><a href="/admin/">Django admin</a> for database management.</p>
+</body>
+</html>

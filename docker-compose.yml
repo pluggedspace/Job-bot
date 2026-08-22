@@ -117,5 +117,3 @@ volumes:
 networks:
   internal_network:
     driver: bridge
-  nginx-proxy-net:
-    external: true

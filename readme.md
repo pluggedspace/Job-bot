@@ -1,162 +1,102 @@
-# Job Autobot (Job Bot) 🚀
+# Job Autobot (Job Bot)
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)  
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/)  
-[![Django 4.x](https://img.shields.io/badge/django-4.x-green.svg)](https://www.djangoproject.com/)  
-[![Telegram](https://img.shields.io/badge/telegram-supported-blue.svg)](https://telegram.org/)  
-[![WhatsApp](https://img.shields.io/badge/whatsapp-supported-green.svg)](https://www.whatsapp.com/)  
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/)
+[![Django](https://img.shields.io/badge/django-5.x-green.svg)](https://www.djangoproject.com/)
+[![Telegram](https://img.shields.io/badge/telegram-supported-blue.svg)](https://telegram.org/)
+[![WhatsApp](https://img.shields.io/badge/whatsapp-optional-green.svg)](https://www.whatsapp.com/)
 
-**Job Autobot** is an **AI-powered job search and preparation assistant** built with **Python Django** by **Pluggedspace Labs**.  
+**Job Autobot** is a self-hosted, AI-powered job search and career preparation assistant. Deploy it on your own infrastructure and interact via **Telegram**, optional **WhatsApp**, or the **REST API**.
 
-It aggregates jobs, helps build and optimize CVs, generates tailored cover letters, provides interview prep, and supports cross-platform usage on **Web, Telegram, and WhatsApp**.  
+## Features
 
-This project is now **open source**. Commercial use **requires attribution**:  
+- Smart job aggregation from multiple sources
+- CV builder, AI review, and cover letter generation
+- Job alerts (Celery + Redis)
+- Interview practice and career path tools
+- Single-user mode — no multi-tenancy or external auth service required
 
-> Powered by Pluggedspace Labs  
+## UI options
 
----
+| Channel | Status | How |
+|---------|--------|-----|
+| **Telegram** | Primary, full-featured | `python manage.py run_bot` |
+| **WhatsApp** | Optional | Meta Business API webhook — see `docs/WHATSAPP_SETUP.md` |
+| **REST API** | Ready | Bearer token auth — build your own frontend or use curl |
+| **Web UI** | Not included | API is ready; see [Frontend](#frontend) below |
 
-## Features ✨
+There is **no web frontend in this repo**. The landing page at `/` is an internal status page for self-hosted deployments.
 
-- **Smart Job Aggregation**: Pulls listings from LinkedIn, Indeed, Glassdoor, company pages, and freelance platforms using NLP.  
-- **CV Builder & Optimization**: Guided resume creation, AI-powered reviews, and ATS optimization.  
-- **Intelligent Job Alerts**: Receive notifications via Telegram, WhatsApp, or web.  
-- **Application Assistance**: Tailored cover letters and job tracking.  
-- **Interview Preparation**: Mock interviews covering behavioral and technical questions.  
-- **Career Development Tools**: Career path visualization, skill gap analysis, and upskilling guidance.  
+## Quick start
 
----
+### Local
 
-## Architecture Overview 🏗️
-
-```text
-      +----------------+
-      |   Web / Mobile |
-      +-------+--------+
-              |
-              v
-      +----------------+
-      |   Django API   |
-      |  (REST / GraphQL)|
-      +-------+--------+
-              |
-  +-----------+-----------+
-  |                       |
-  v                       v
-Job Aggregator         AI Engine
-(NLP + Crawlers)     (CV review, Alerts)
-  |
-  v
-Messaging Platforms
-(Telegram / WhatsApp)
-
-
----
-
-Open Source Repository 📂
-
-GitHub: https://github.com/pluggedspace/Job-bot
-
-You can:
-
-Fork and run locally
-
-Customize job pipelines
-
-Extend features or integrations
-
-Experiment with Django + AI workflows
-
-
-
----
-
-Quick Start 🏃‍♂️
-
-Local Setup
-
+```bash
 git clone https://github.com/pluggedspace/Job-bot.git
 cd Job-bot
-
-# install dependencies
 pip install -r requirements.txt
-
-# copy env variables
-cp .env.example .env
-
-# apply migrations
+cp .env.example .env   # edit with your tokens and keys
 python manage.py migrate
-
-# run server
 python manage.py runserver
+```
 
-Access the app at http://127.0.0.1:8000
+In another terminal, start the Telegram bot:
 
+```bash
+python manage.py run_bot
+```
 
----
+Visit `http://127.0.0.1:8000/` for the status page. API calls use:
 
-Docker (Optional)
+```bash
+curl -H "Authorization: Bearer YOUR_API_TOKEN" http://127.0.0.1:8000/api/user/profile/
+```
 
-docker build -t job-autobot .
-docker run -p 8000:8000 --env-file .env job-autobot
+### Docker
 
+```bash
+cp .env.example .env
+docker compose up -d
+```
 
----
+Services: web API, Telegram bot, PostgreSQL, Redis, Celery worker, Celery beat.
 
-Contribution 🤝
+## Frontend
 
-We welcome contributions:
+The REST API under `/api/` is complete for profile, jobs, alerts, career tools, CV, and interview features. Options for a web UI:
 
-New job source integrations
+1. **Telegram-only** — simplest; no frontend needed
+2. **Build a frontend** — any SPA (React, Vue, Svelte) against `/api/` with `Authorization: Bearer <API_TOKEN>`
+3. **Open-source the frontend separately** — publish a `job-bot-web` repo when ready
+4. **API clients** — Postman, Bruno, or scripts for automation
 
-NLP search improvements
+We recommend documenting your API token in `.env` and keeping `ENABLE_PREMIUM=true` for self-hosted use.
 
-UI/UX enhancements
+## Configuration
 
-ATS optimization logic
+| Variable | Purpose |
+|----------|---------|
+| `API_TOKEN` | Secret token for REST API access |
+| `TELEGRAM_BOT_TOKEN` | Telegram BotFather token |
+| `ENABLE_PREMIUM` | `true` unlocks all features locally (default) |
+| `ENABLE_PAYMENTS` | `false` disables Paystack/Flutterwave (default) |
 
-Messaging platform features
+See `.env.example` for the full list.
 
-Performance tuning
+## Documentation
 
+- [Technical documentation](docs/TECHNICAL_DOCUMENTATION.md)
+- [User guide (Telegram/WhatsApp commands)](docs/USER_GUIDE.md)
+- [WhatsApp setup](docs/WHATSAPP_SETUP.md)
 
+## Contributing
 
----
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-License 📄
+## License
 
-MIT License. Commercial deployments must include attribution:
+MIT — see [LICENSE](LICENSE).
 
-> Powered by Pluggedspace Labs
+## Disclaimer
 
-
-
-
----
-
-Disclaimer ⚠️
-
-Job Autobot aggregates publicly available job data. Users are responsible for verifying listings independently.
-
-
----
-
-About Pluggedspace Labs 🧪
-
-Focused on intelligent systems, automation, and human-AI collaboration, Pluggedspace Labs uses prototypes like Job Autobot to research workflows, orchestration, and automation. Insights from this project feed into Akili Weave (Atlas) — our primary AI engine.
-
-
----
-
-Get Started 🚀
-
-1. Fork the repo
-
-
-2. Run locally or via Docker
-
-
-3. Experiment, contribute, and improve the job search experience!
-
-
-
+Job Autobot aggregates publicly available job listings. Verify listings independently before applying.

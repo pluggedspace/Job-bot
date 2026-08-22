@@ -144,12 +144,6 @@ class WhatsAppBot:
             await self.cv_review_handler(from_number, user)
         elif message_lower.startswith('/practice'):
             await self.interview_practice_handler(from_number, user)
-        elif message_lower.startswith('/link'):
-            await self.link_account_command(from_number, user)
-        elif message_lower.startswith('/unlink'):
-            await self.unlink_account_command(from_number, user)
-        elif message_lower.startswith('/account'):
-            await self.account_info_command(from_number, user)
         else:
             self.send_message(from_number, 
                 "Unknown command. Send /start to see available commands.")
@@ -481,66 +475,6 @@ class WhatsAppBot:
         
         result = await handle_interview_practice(user, None)
         self.send_message(phone, result)
-    
-    async def link_account_command(self, phone: str, user):
-        """Generate account linking code"""
-        if user.tenant_user:
-            self.send_message(phone,
-                f"✅ *Account Already Linked*\n\n"
-                f"Your WhatsApp account is linked to:\n"
-                f"📧 {user.tenant_user.email}\n"
-                f"🏢 {user.tenant_user.tenant.name}\n\n"
-                "Use /unlink to disconnect.")
-            return
-        
-        code = await sync_to_async(user.generate_link_code)()
-        
-        self.send_message(phone,
-            f"🔗 *Link Your Account*\n\n"
-            f"Your linking code: `{code}`\n\n"
-            f"⏰ This code expires in 15 minutes.\n\n"
-            f"*To link your account:*\n"
-            f"1. Go to https://job.pluggedspace.org/settings/link\n"
-            f"2. Enter this code\n"
-            f"3. Your WhatsApp and web accounts will be linked!")
-    
-    async def unlink_account_command(self, phone: str, user):
-        """Unlink account"""
-        if not user.tenant_user:
-            self.send_message(phone,
-                "ℹ️ Your WhatsApp account is not linked to any web profile.\n"
-                "Use /link to link your account.")
-            return
-        
-        email = user.tenant_user.email
-        user.tenant_user = None
-        await sync_to_async(user.save)()
-        
-        self.send_message(phone,
-            f"✅ *Account Unlinked*\n\n"
-            f"Your WhatsApp account has been disconnected from:\n"
-            f"📧 {email}\n\n"
-            "You can link to a different account anytime using /link")
-    
-    async def account_info_command(self, phone: str, user):
-        """Show account information"""
-        message = f"👤 *Your Account Info*\n\n"
-        message += f"*WhatsApp:* {user.whatsapp_id}\n"
-        message += f"*Subscription:* {user.subscription_status}\n"
-        message += f"*Searches:* {user.search_count}/{FREE_SEARCH_LIMIT}\n\n"
-        
-        if user.tenant_user:
-            message += f"*🔗 Linked Web Account:*\n"
-            message += f"• Email: {user.tenant_user.email}\n"
-            message += f"• Name: {user.tenant_user.full_name or 'Not set'}\n"
-            message += f"• Organization: {user.tenant_user.tenant.name}\n\n"
-            message += "Use /unlink to disconnect"
-        else:
-            message += f"*🔗 Account Linking:*\n"
-            message += "Not linked to any web account\n\n"
-            message += "Use /link to link your account"
-        
-        self.send_message(phone, message)
 
 
 # Global bot instance
