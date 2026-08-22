@@ -1,9 +1,9 @@
 # Job Bot - User Guide
 
-Welcome to Job Bot! Your AI-powered job search assistant available on web, Telegram, and WhatsApp.
+Welcome to Job Bot! Your AI-powered job search assistant available on Telegram, WhatsApp, and via REST API.
 
-**Version**: 2.1  
-**Last Updated**: December 2025
+**Version**: 3.0  
+**Last Updated**: August 2026
 
 ## Table of Contents
 - [Overview](#overview)
@@ -11,7 +11,8 @@ Welcome to Job Bot! Your AI-powered job search assistant available on web, Teleg
 - [Commands Reference](#commands-reference)
 - [Features](#features)
 - [Using the Bots](#using-the-bots)
-- [Subscription Plans](#subscription-plans)
+- [REST API](#rest-api)
+- [Feature Flags](#feature-flags)
 - [FAQ](#faq)
 - [Support](#support)
 
@@ -28,59 +29,36 @@ Job Bot leverages AI to streamline the job search process by providing:
 - **Job Alerts**: Receive notifications for new matching positions
 - **Interview Practice**: Prepare for interviews with AI-powered mock sessions
 
-**Target Audience**: Job seekers at all career levels, from entry-level to experienced professionals.
+**Target Audience**: Self-hosted users who want a personal AI-powered job search assistant.
 
 ---
 
 ## Getting Started
 
-### Creating an Account
+### Telegram Bot (Primary)
 
-#### Web Application
-1. Visit the Job Bot website
-2. Click "Sign Up" or "Register"
-3. Fill in your details:
-   - Email address
-   - Password
-   - First and last name
-   - Organization name
-4. Click "Create Account"
-5. You're ready to start!
-
-#### Telegram Bot
 1. Open Telegram
-2. Search for `@jobautobot` or visit [t.me/jobautobot](https://t.me/jobautobot)
+2. Search for your bot (created via @BotFather)
 3. Click "Start" or type `/start`
 4. The bot will create your account automatically
 5. Start searching for jobs!
 
-#### WhatsApp Bot
+### WhatsApp Bot (Optional)
+
 1. Open WhatsApp
 2. Send a message to the Job Bot number
 3. Type "Hi" or "Start"
 4. The bot will create your account automatically
 5. Start searching for jobs!
 
-### Linking Your Accounts
+### REST API
 
-Connect your web, Telegram, and WhatsApp accounts to sync your data:
+The REST API is available for scripts, automation, or custom frontends. Authenticate with:
 
-1. **Get Your Linking Code**:
-   - In Telegram or WhatsApp, type `/link`
-   - You'll receive a 6-character code (e.g., ABC123)
-   - This code expires in 10 minutes
-
-2. **Link on Web**:
-   - Log in to the web app
-   - Go to "Link Accounts" page
-   - Enter your 6-character code
-   - Click "Link Account"
-
-3. **Benefits**:
-   - Unified job alerts across all platforms
-   - Shared subscription and search quota
-   - Access your CV and saved jobs anywhere
-   - Seamless experience across devices
+```bash
+curl -H "Authorization: Bearer YOUR_API_TOKEN" \
+  http://127.0.0.1:8000/api/user/profile/
+```
 
 ---
 
@@ -104,20 +82,14 @@ Searches for jobs across multiple platforms.
 /findjobs marketing manager new york
 ```
 
-**Web Alternative**: Use the "Job Search" page with the search form.
-
 #### `/quota`
-Shows your remaining job searches for the current month.
+Shows your remaining job searches.
 
-- **Free Users:** 10 searches per month
-- **Premium Users:** Unlimited searches
-
-**Web Alternative**: Check the "Subscription" page for your quota.
+- **Free Users:** 25 searches
+- **Premium Users (ENABLE_PREMIUM=true):** Unlimited searches
 
 #### `/history`
 Displays your saved jobs and search history.
-
-**Web Alternative**: View saved jobs on the "Job Search" page.
 
 ---
 
@@ -135,12 +107,8 @@ Starts an interactive CV creation wizard with the following sections:
 
 The bot guides you through each section step by step.
 
-**Web Alternative**: Use the "CV Builder" page to edit your profile.
-
 #### `/view_cv`
 Displays your current CV in a formatted, readable layout.
-
-**Web Alternative**: View your profile on the "CV Builder" page.
 
 #### `/cv_review`
 Provides AI-powered analysis of your CV with suggestions for:
@@ -149,7 +117,7 @@ Provides AI-powered analysis of your CV with suggestions for:
 - Keyword enhancement for ATS systems
 - Section organization
 
-**Premium Feature** - Available on web "CV Builder" page.
+**Premium Feature** — unlocked by default with `ENABLE_PREMIUM=true`.
 
 ---
 
@@ -168,16 +136,11 @@ Creates personalized job alerts based on your criteria:
 - "Remote marketing jobs paying $80k+"
 - "Entry-level data analyst roles"
 
-**Web Alternative**: Use the "Job Alerts" page to create and manage alerts.
-
 #### `/myalerts`
 Manages your active job alerts:
 - View all active alerts
-- Edit alert criteria
+- Toggle alerts on/off
 - Delete alerts
-- Pause/resume alerts
-
-**Web Alternative**: Manage alerts on the "Job Alerts" page.
 
 ---
 
@@ -199,8 +162,6 @@ Explores career progression options and potential growth paths.
 - Alternative career paths (related roles)
 - Required skills and experience
 
-**Web Alternative**: Use the "Career Path" page.
-
 #### `/practice`
 Interactive interview preparation with:
 - Common behavioral questions
@@ -208,7 +169,7 @@ Interactive interview preparation with:
 - STAR method guidance
 - Sample answers and feedback
 
-**Premium Feature** - Available on web "Interview Practice" page.
+**Premium Feature** — unlocked by default with `ENABLE_PREMIUM=true`.
 
 #### `/upskill`
 Generates personalized learning recommendations:
@@ -217,8 +178,6 @@ Generates personalized learning recommendations:
 - Reading materials
 - Project ideas
 - Certification paths
-
-**Web Alternative**: Use the "Upskill Plan" page.
 
 ---
 
@@ -246,26 +205,21 @@ Generates tailored cover letters based on:
 - Professional tone and structure
 - Editable template output
 
-**Premium Feature** - Available on web "CV Builder" page.
+**Premium Feature** — unlocked by default with `ENABLE_PREMIUM=true`.
 
 ---
 
 ### 💎 Premium Features
 
-#### `/subscribe`
-Shows premium plan options and upgrade process.
+With `ENABLE_PREMIUM=true` (default in self-hosted mode), all features are unlocked:
 
-**Premium Benefits:**
-- Unlimited job searches (vs. 10/month free)
-- Up to 5 active job alerts (vs. 1 free)
+- Unlimited job searches
+- Up to 20 active job alerts
 - AI CV review
 - Cover letter generator
 - Mock interview practice
-- Priority support
 - Full search results access
 - Enhanced career insights
-
-**Web Alternative**: Visit the "Subscription" page to upgrade.
 
 ---
 
@@ -274,14 +228,8 @@ Shows premium plan options and upgrade process.
 #### `/start`
 Initializes the bot and displays welcome message with overview.
 
-#### `/help`
-Lists all available commands with brief descriptions.
-
-#### `/link`
-Generates a linking code to connect your bot account to the web app.
-
-#### `/unlink`
-Disconnects your bot account from the web app.
+#### `/subscribe`
+Shows subscription options (only if `ENABLE_PAYMENTS=true`).
 
 ---
 
@@ -289,7 +237,7 @@ Disconnects your bot account from the web app.
 
 ### Smart Job Search
 - **Natural Language Processing**: Understands complex queries like "senior python jobs in tech startups"
-- **Multi-platform Aggregation**: Searches across major job boards (LinkedIn, Indeed, Glassdoor, etc.)
+- **Multi-platform Aggregation**: Searches across multiple job boards (JSearch, Adzuna, Careerjet, Findwork, Jooble, Arbeitnow, Remotive, Jobicy, Authentic Jobs)
 - **Advanced Filtering**: Location, salary, experience level, company size, and more
 - **Relevance Scoring**: AI-powered matching based on your profile and preferences
 
@@ -301,21 +249,16 @@ Disconnects your bot account from the web app.
 - **AI Review**: Get feedback on your CV (Premium)
 
 ### Intelligent Job Alerts
-- **Automated Monitoring**: Daily checks for new matching positions
-- **Instant Notifications**: Receive alerts via Telegram, WhatsApp, or email
+- **Automated Monitoring**: Checks every 30 minutes for new matching positions
+- **Instant Notifications**: Receive alerts via Telegram
 - **Customizable Criteria**: Set specific requirements for your ideal job
-- **Multiple Alerts**: Create up to 5 alerts (Premium) or 1 (Free)
+- **Multiple Alerts**: Create up to 20 alerts (Premium) or 5 (Free)
 
 ### Career Development Tools
 - **Career Path Explorer**: Discover progression opportunities and related roles
 - **Upskill Plans**: Get personalized learning roadmaps
 - **Mock Interviews**: Practice with AI-powered interview sessions (Premium)
 - **Cover Letter Generator**: Create tailored cover letters (Premium)
-
-### Career Analytics
-- **Search Tracking**: Monitors your job search activity and patterns
-- **Skill Gap Analysis**: Identifies areas for professional development
-- **Market Insights**: Provides industry trends and salary data
 
 ---
 
@@ -324,7 +267,7 @@ Disconnects your bot account from the web app.
 ### Telegram Bot
 
 **Starting the Bot**:
-1. Search for `@jobautobot` in Telegram or visit [t.me/jobautobot](https://t.me/jobautobot)
+1. Search for your bot in Telegram
 2. Click "Start" or type `/start`
 
 **Available Commands**:
@@ -341,10 +284,7 @@ Disconnects your bot account from the web app.
 - `/upskill` - Get learning recommendations
 - `/practice` - Mock interview practice (Premium)
 - `/quota` - Check remaining searches
-- `/link` - Generate linking code
-- `/unlink` - Disconnect from web account
-- `/subscribe` - Manage subscription
-- `/help` - Get help
+- `/subscribe` - Manage subscription (if payments enabled)
 
 **Tips**:
 - You can search by typing `/findjobs` followed by your query
@@ -362,8 +302,7 @@ Same as Telegram - just type the command (e.g., `/findjobs python developer`)
 
 **Tips**:
 - WhatsApp bot works exactly like Telegram
-- All your data syncs across platforms
-- You can switch between platforms anytime
+- All your data is stored in the same database
 
 ### Bot Best Practices
 
@@ -375,65 +314,63 @@ Same as Telegram - just type the command (e.g., `/findjobs python developer`)
    - Save time by getting notified automatically
    - Focus on jobs that match your criteria
 
-3. **Link Accounts**: Connect your web and bot accounts
-   - Access premium features on all platforms
-   - Keep your data synchronized
+---
+
+## REST API
+
+The REST API is available for scripts, automation, or custom frontends.
+
+### Authentication
+
+All API requests require a Bearer token:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_TOKEN" \
+  http://127.0.0.1:8000/api/user/profile/
+```
+
+### Interactive Documentation
+
+OpenAPI/Swagger docs are auto-generated:
+
+| URL | Description |
+|-----|-------------|
+| `/api/schema/` | OpenAPI schema (JSON) |
+| `/api/docs/` | Swagger UI |
+| `/api/redoc/` | ReDoc UI |
+
+### Key Endpoints
+
+```
+GET   /api/user/profile/          Get user profile
+PATCH /api/user/profile/          Update user profile
+POST  /api/jobs/search/           Search for jobs
+GET   /api/jobs/saved/            Get saved jobs
+POST  /api/jobs/saved/            Save a job
+GET   /api/alerts/                List alerts
+POST  /api/alerts/                Create alert
+POST  /api/alerts/{id}/toggle/    Toggle alert
+POST  /api/career/path/           Get career path
+POST  /api/career/upskill/        Get upskill plan
+POST  /api/interview/practice/    Interview practice
+GET   /api/interview/session/     Check session
+POST  /api/cv/review/             CV review
+POST  /api/cv/coverletter/        Cover letter
+GET   /api/subscription/quota/    Get quota
+```
 
 ---
 
-## Subscription Plans
+## Feature Flags
 
-### Free Plan
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_PREMIUM` | `true` | Unlocks all premium features (CV review, cover letters, interview practice, unlimited searches) |
+| `ENABLE_PAYMENTS` | `false` | Enables Paystack/Flutterwave payment integration |
 
-**Included**:
-- ✅ 10 job searches per month
-- ✅ 1 job alert
-- ✅ Save unlimited jobs
-- ✅ Basic CV building
-- ✅ Career path explorer
-- ✅ Upskill learning plans
-- ✅ Access via web, Telegram, and WhatsApp
+When `ENABLE_PREMIUM=true`, all features are unlocked regardless of subscription status.
 
-**Limitations**:
-- ❌ Limited searches (10/month)
-- ❌ Only 1 alert
-- ❌ No CV review
-- ❌ No cover letter generator
-- ❌ No mock interviews
-
-### Premium Plan
-
-**Price**: NGN 4,500/month (approximately $9.99 USD)
-
-**Everything in Free, Plus**:
-- ✅ **Unlimited job searches**
-- ✅ **Up to 5 job alerts**
-- ✅ **AI CV review**
-- ✅ **Cover letter generator**
-- ✅ **Mock interview practice**
-- ✅ **Priority support**
-- ✅ **Full search results access**
-- ✅ **Enhanced career insights**
-- ✅ **Early access to new features**
-
-### How to Subscribe
-
-1. **Via Web**:
-   - Go to "Subscription" page
-   - Click "Upgrade to Premium"
-   - Complete payment via Paystack
-   - Verify payment
-
-2. **Via Bot**:
-   - Type `/subscribe`
-   - Follow the payment instructions
-   - Your account will be upgraded automatically
-
-### Payment Methods
-
-- **Paystack**: Credit/Debit cards, Bank transfer
-- **Secure**: All payments are processed securely
-- **Cancel Anytime**: No long-term commitment
+When `ENABLE_PAYMENTS=false`, subscription endpoints return `501 Not Implemented`.
 
 ---
 
@@ -442,30 +379,13 @@ Same as Telegram - just type the command (e.g., `/findjobs python developer`)
 ### General Questions
 
 **Q: Is Job Bot free?**
-A: Yes! We offer a free plan with 10 searches per month. Premium plans unlock unlimited searches and advanced features.
+A: Yes! In self-hosted mode, `ENABLE_PREMIUM=true` unlocks all features by default.
 
 **Q: Which platforms does Job Bot support?**
-A: Job Bot is available on web, Telegram, and WhatsApp. You can use any or all platforms.
-
-**Q: Can I use Job Bot on multiple devices?**
-A: Yes! Link your accounts to access your data across all platforms and devices.
+A: Job Bot is available on Telegram (primary), WhatsApp (optional), and via REST API.
 
 **Q: Which job boards do you search?**
-A: We aggregate from multiple sources including LinkedIn, Indeed, Glassdoor, major job boards, company career pages, and specialized platforms.
-
-### Account & Linking
-
-**Q: How do I link my Telegram/WhatsApp to my web account?**
-A: Type `/link` in the bot to get a 6-character code. Enter this code on the web app's "Link Accounts" page.
-
-**Q: What happens when I link my accounts?**
-A: Your job alerts, saved jobs, subscription status, and search quota are shared across all platforms.
-
-**Q: Can I unlink my accounts?**
-A: Yes, use the "Unlink" button on the web app or type `/unlink` in the bot.
-
-**Q: Is my data secure?**
-A: Yes, we take data privacy seriously. Your personal information and CV data are encrypted and stored securely.
+A: We aggregate from multiple sources including JSearch, Adzuna, Careerjet, Findwork, Jooble, Arbeitnow, Remotive, Jobicy, and Authentic Jobs.
 
 ### Job Search
 
@@ -476,18 +396,18 @@ A: Job Bot uses advanced AI algorithms to match your profile with relevant posit
 A: We provide direct links to job applications. Click "Apply Now" to go to the employer's application page.
 
 **Q: How do I save a job?**
-A: Click the "Save" button on web or use the save option in bot search results.
+A: Click the "Save" button in bot search results.
 
 ### Alerts
 
 **Q: How often do I get alert notifications?**
-A: Alerts check for new positions daily and notify you immediately when matches are found.
+A: Alerts check for new positions every 30 minutes and notify you when matches are found.
 
 **Q: Can I pause an alert?**
-A: Yes! Use the "Pause" button on web or manage alerts via `/myalerts` in the bot.
+A: Yes! Use `/myalerts` in the bot to toggle alerts on/off.
 
 **Q: How many alerts can I create?**
-A: Free plan: 1 alert. Premium plan: Up to 5 alerts.
+A: Free plan: 5 alerts. Premium plan (ENABLE_PREMIUM=true): Up to 20 alerts.
 
 ### CV & Applications
 
@@ -500,65 +420,38 @@ A: Our AI analyzes your CV and provides feedback on content, formatting, and opt
 **Q: Can I generate multiple cover letters?**
 A: Yes! Premium users can generate unlimited cover letters for different job applications.
 
-### Subscription
-
-**Q: Is there a free trial for premium?**
-A: All users start with free access. Premium features are available through subscription with clear benefits outlined.
-
-**Q: How do I upgrade to Premium?**
-A: Go to the "Subscription" page on web or type `/subscribe` in the bot.
-
-**Q: What payment methods do you accept?**
-A: We accept credit/debit cards and bank transfers via Paystack.
-
-**Q: Can I cancel my subscription?**
-A: Yes, you can cancel anytime. Your premium features will remain active until the end of your billing period.
-
-**Q: Do I get a refund if I cancel?**
-A: Subscriptions are non-refundable, but you can use premium features until the end of your billing period.
-
 ### Technical Issues
 
 **Q: The bot isn't responding. What should I do?**
-A: 
+A:
 1. Check your internet connection
 2. Try typing `/start` to restart the bot
-3. If the issue persists, contact support
-
-**Q: I didn't receive my linking code. What should I do?**
-A: Type `/link` again to generate a new code. Codes expire after 10 minutes.
+3. Check that the bot is running (`python manage.py run_bot`)
+4. Check server logs
 
 **Q: My search quota isn't updating. Why?**
-A: 
-1. Ensure your accounts are linked if using multiple platforms
+A:
+1. Check your `ENABLE_PREMIUM` setting
 2. Check your subscription status
 3. Contact support if the issue persists
 
-**Q: I can't log in to the web app. What should I do?**
-A:
-1. Verify your email and password
-2. Try resetting your password
-3. Clear your browser cache
-4. Contact support if needed
-
 **Q: Is there a mobile app?**
-A: Job Bot runs entirely within Telegram and WhatsApp, which are available on all major mobile platforms. The web app is also mobile-responsive.
+A: Job Bot runs entirely within Telegram and WhatsApp, which are available on all major mobile platforms.
 
 ---
 
 ## Support
 
 ### Getting Help
-- **In-Bot Support**: Use `/help` for command assistance
-- **Email**: support@pluggedspace.org
-- **Documentation**: [docs.pluggedspace.org/models/job](https://docs.pluggedspace.org/models/job)
-- **Website**: [pluggedspace.org/projects/job](https://pluggedspace.org/projects/job)
+- **In-Bot Support**: Use `/start` for command assistance
+- **Documentation**: See `docs/` in the repository
+- **Source Code**: [github.com/pluggedspace/Job-bot](https://github.com/pluggedspace/Job-bot)
 
 ### Common Issues
 - **Search Limits**: Use `/quota` to check remaining searches
 - **CV Building**: Use `/build_cv` for step-by-step guidance
 - **Job Alerts**: Use `/myalerts` to manage notifications
-- **Premium Features**: Use `/subscribe` for upgrade information
+- **Premium Features**: Set `ENABLE_PREMIUM=true` in `.env`
 
 ---
 
@@ -593,6 +486,6 @@ We're here to help you find your dream job. Good luck!
 
 ---
 
-*Last updated: December 2024*  
-*Version: 2.1*  
-*For the latest updates, visit our documentation site.*
+*Last updated: August 2026*  
+*Version: 3.0*  
+*For the latest updates, visit the repository.*

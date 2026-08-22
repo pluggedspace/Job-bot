@@ -4,78 +4,92 @@
 - [Architecture Overview](#architecture-overview)
 - [Technology Stack](#technology-stack)
 - [Database Schema](#database-schema)
-- [Internal API Endpoints](#internal-api-endpoints)
-- [Bot Integration](#bot-integration)
+- [REST API](#rest-api)
 - [Authentication & Authorization](#authentication--authorization)
+- [Telegram Bot](#telegram-bot)
+- [WhatsApp Bot](#whatsapp-bot)
+- [Job Search Aggregation](#job-search-aggregation)
+- [Background Tasks (Celery)](#background-tasks-celery)
+- [Feature Flags](#feature-flags)
 - [Deployment Guide](#deployment-guide)
+- [Development Setup](#development-setup)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Architecture Overview
 
-Job Bot is a multi-platform job search assistant built with a microservices architecture:
+Job Bot is a **self-hosted, single-user** job search and career preparation assistant. It is built as a Django application that exposes a REST API and runs Telegram/WhatsApp bots.
 
 ```
-┌─────────────────┐
-│   Next.js Web   │
-│   Application   │
-└────────┬────────┘
-         │
-         ├─────────────────┐
-         │                 │
-    ┌────▼────┐      ┌────▼────┐
-    │  Kong   │      │ Django  │
-    │ Gateway │◄─────┤   API   │
-    └────┬────┘      └────┬────┘
-         │                │
-         │           ┌────▼────────┐
-         │           │ PostgreSQL  │
-         │           │  Database   │
-         │           └─────────────┘
-         │
-    ┌────▼──────────────────┐
-    │   Telegram Bot API    │
-    │  WhatsApp Business    │
-    └───────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    Django API                       │
+│              (jobsearchbot project)                 │
+│                                                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────┐  │
+│  │  REST API    │  │  Telegram    │  │  WhatsApp │  │
+│  │  (/api/)     │  │  Bot         │  │  Bot      │  │
+│  └──────┬───────┘  └──────┬───────┘  └─────┬─────┘  │
+│         │                 │                │        │
+│  ┌──────▼─────────────────▼────────────────▼─────┐  │
+│  │              PostgreSQL Database              │  │
+│  └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+         │                        │
+    ┌────▼────┐            ┌──────▼──────┐
+    │  Redis  │            │  Celery     │
+    │ (broker)│            │  Worker     │
+    └─────────┘            │  + Beat     │
+                           └─────────────┘
 ```
 
 ### Components
 
-1. **Frontend (Next.js)**: React-based web application with TypeScript
-2. **Backend (Django)**: REST API with Django Rest Framework
-3. **API Gateway (Kong)**: Request routing, authentication, and rate limiting
-4. **Database (PostgreSQL)**: Primary data store
-5. **Bot Services**: Telegram and WhatsApp bot handlers
-6. **External APIs**: RapidAPI (job search), Gemini AI, Paystack (payments)
+1. **Django API** — REST API with Django Rest Framework, protected by a static API token
+2. **Telegram Bot** — Primary user interface, full-featured via `python manage.py run_bot`
+3. **WhatsApp Bot** — Optional, via Meta WhatsApp Business API webhook
+4. **PostgreSQL** — Primary data store
+5. **Redis + Celery** — Background job alert checking and scheduled tasks
+6. **External APIs** — Job search providers (JSearch, Adzuna, Careerjet, etc.) and AI providers (Groq, Gemini, Mistral)
+
+### Key Design Decisions
+
+- **Single-user mode**: No multi-tenancy, no external auth service. One default user via `User.get_default_user()` for API access.
+- **Static API token**: `API_TOKEN` in `.env` → `Authorization: Bearer <token>` header.
+- **Feature flags**: `ENABLE_PREMIUM=true` unlocks all features by default; `ENABLE_PAYMENTS=false` disables payment providers.
+- **No web frontend**: `/` serves a simple self-hosted status page. The REST API is ready for custom frontends.
 
 ---
 
 ## Technology Stack
 
 ### Backend
-- **Framework**: Django 4.x
+- **Framework**: Django 5.x
 - **API**: Django Rest Framework
-- **Database**: PostgreSQL
+- **Database**: PostgreSQL 15
 - **ORM**: Django ORM
 - **Async**: Python asyncio for bot handlers
-- **Authentication**: JWT tokens (djangorestframework-simplejwt)
-
-### Frontend
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **HTTP Client**: Axios
-- **State Management**: React hooks
+- **Authentication**: Static API token (Bearer)
+- **API Docs**: drf-spectacular (OpenAPI/Swagger/ReDoc)
 
 ### Bots
-- **Telegram**: python-telegram-bot library
-- **WhatsApp**: Meta WhatsApp Business API (direct HTTP)
+- **Telegram**: python-telegram-bot library (polling or webhook)
+- **WhatsApp**: Meta WhatsApp Business API (direct HTTP webhook)
+
+### Background Tasks
+- **Celery**: Worker + Beat for scheduled job alert checks
+- **Redis**: Message broker and result backend
 
 ### Infrastructure
-- **API Gateway**: Kong
-- **Payments**: Paystack
-- **AI Services**: Google Gemini API
-- **Job Search**: RapidAPI (JSearch)
+- **Containerization**: Docker + docker-compose
+- **Web Server**: Gunicorn (production)
+- **Static Files**: WhiteNoise
+- **Monitoring**: Sentry (optional)
+
+### AI & Job Search
+- **AI Providers**: Groq, Gemini, Mistral (for CV review, cover letters, interview practice, career paths)
+- **Job Search**: JSearch (RapidAPI), Adzuna, Careerjet, Findwork, Jooble, Arbeitnow, Remotive, Jobicy, Authentic Jobs
 
 ---
 
@@ -83,218 +97,361 @@ Job Bot is a multi-platform job search assistant built with a microservices arch
 
 ### Core Models
 
-#### TenantUser
-Primary user model for web authentication.
-
-```python
-class TenantUser(models.Model):
-    email = models.EmailField(unique=True)
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
-    tenant = models.ForeignKey(Tenant)
-    subscription_status = models.CharField()  # 'Free', 'Paid'
-    search_count = models.IntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
-```
-
-#### User (Platform User)
-Bot user model for Telegram/WhatsApp.
+#### User
+Single-user profile for Telegram, WhatsApp, and API access.
 
 ```python
 class User(models.Model):
-    telegram_id = models.BigIntegerField(unique=True, null=True)
-    whatsapp_id = models.CharField(unique=True, null=True)
-    username = models.CharField(max_length=100)
-    platform_type = models.CharField()  # 'telegram', 'whatsapp'
-    tenant_user = models.ForeignKey(TenantUser, null=True)
-    subscription_status = models.CharField()
+    user_id = models.CharField(max_length=100, unique=True)
+    username = models.CharField(max_length=100, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
+    full_name = models.CharField(max_length=255, null=True, blank=True)
+
+    telegram_id = models.CharField(max_length=100, null=True, blank=True, unique=True)
+    whatsapp_id = models.CharField(max_length=100, null=True, blank=True, unique=True)
+    platform_type = models.CharField(
+        max_length=20,
+        choices=[("telegram", "Telegram"), ("whatsapp", "WhatsApp"), ("api", "API")],
+        default="telegram",
+    )
+
+    subscription_status = models.CharField(max_length=20, default="Free")
+    payment_reference = models.CharField(max_length=100, null=True, blank=True)
     search_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    cv_data = models.JSONField(null=True, blank=True)
+    current_job_title = models.CharField(max_length=255, null=True, blank=True)
+    skills = models.JSONField(default=list, blank=True)
 ```
 
-#### JobAlert
+**`get_default_user()`**: Returns (or creates) the single default user for API access:
+
+```python
+@classmethod
+def get_default_user(cls):
+    user, _ = cls.objects.get_or_create(
+        user_id="default",
+        defaults={"username": "owner", "platform_type": "api"},
+    )
+    return user
+```
+
+#### Job
+Jobs saved by the user.
+
+```python
+class Job(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="jobs")
+    job_id = models.CharField(max_length=255)
+    title = models.CharField(max_length=255)
+    company = models.CharField(max_length=255)
+    saved_at = models.DateTimeField(auto_now_add=True)
+```
+
+#### Alert
 User-configured job search alerts.
 
 ```python
-class JobAlert(models.Model):
-    user = models.ForeignKey(User)
-    query = models.CharField(max_length=500)
+class Alert(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="alerts")
+    query = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
     active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
 ```
 
-#### SavedJob
-Jobs saved by users.
+#### CareerPathCache
+Cached career path results to avoid repeated AI calls.
 
 ```python
-class SavedJob(models.Model):
-    user = models.ForeignKey(User)
-    job_id = models.CharField(max_length=255)
-    title = models.CharField(max_length=500)
-    company = models.CharField(max_length=500)
-    created_at = models.DateTimeField(auto_now_add=True)
+class CareerPathCache(models.Model):
+    input_title = models.CharField(max_length=255, unique=True)
+    normalized_title = models.SlugField(max_length=255, unique=True)
+    result_data = models.JSONField()
+    updated_at = models.DateTimeField(auto_now=True)
 ```
 
-#### LinkingCode
-Temporary codes for account linking.
+#### InterviewSession / InterviewResponse
+Mock interview practice sessions.
 
 ```python
-class LinkingCode(models.Model):
-    code = models.CharField(max_length=6, unique=True)
-    platform_user = models.ForeignKey(User)
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    used = models.BooleanField(default=False)
+class InterviewSession(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    job_title = models.CharField(max_length=255)
+    started_at = models.DateTimeField(auto_now_add=True)
+    is_complete = models.BooleanField(default=False)
+    current_question = models.IntegerField(default=0)
+    total_questions = models.IntegerField(default=5)
+
+class InterviewResponse(models.Model):
+    session = models.ForeignKey(InterviewSession, on_delete=models.CASCADE)
+    question = models.TextField()
+    answer = models.TextField()
+    is_follow_up = models.BooleanField(default=False)
 ```
 
 ### Relationships
 
-- **One-to-One**: `User.tenant_user` → `TenantUser` (optional, for linked accounts)
-- **One-to-Many**: `User` → `JobAlert`, `SavedJob`, `InterviewSession`
-- **Many-to-One**: `TenantUser` → `Tenant`
+- **One-to-Many**: `User` → `Job`, `Alert`, `InterviewSession`
+- **One-to-Many**: `InterviewSession` → `InterviewResponse`
 
 ---
 
-## Internal API Endpoints
+## REST API
 
-### Authentication
+All endpoints are under `/api/` and require `Authorization: Bearer <API_TOKEN>`.
+
+### Interactive Documentation
+
+OpenAPI/Swagger docs are auto-generated with **drf-spectacular**:
+
+| URL | Description |
+|-----|-------------|
+| `/api/schema/` | OpenAPI schema (JSON) |
+| `/api/docs/` | Swagger UI |
+| `/api/redoc/` | ReDoc UI |
+
+### User Profile
 
 ```
-POST /api/auth/register/
-POST /api/auth/login/
-POST /api/auth/refresh/
-GET  /api/auth/me/
+GET   /api/user/profile/    Get current user profile
+PATCH /api/user/profile/    Update user profile (partial)
 ```
 
 ### Job Search
 
 ```
-GET  /api/jobs/search/?query={query}
-POST /api/jobs/saved/
-GET  /api/jobs/saved/
-DELETE /api/jobs/saved/{id}/
+POST  /api/jobs/search/     Search for jobs
+      Body: {"query": "python developer", "filters": {...}}
+
+GET   /api/jobs/saved/      Get saved jobs
+POST  /api/jobs/saved/      Save a job
 ```
 
 ### Alerts
 
 ```
-GET  /api/alerts/
-POST /api/alerts/
-PUT  /api/alerts/{id}/toggle/
-DELETE /api/alerts/{id}/
+GET    /api/alerts/         List alerts
+POST   /api/alerts/         Create alert
+GET    /api/alerts/{id}/    Get alert
+PUT    /api/alerts/{id}/    Update alert
+PATCH  /api/alerts/{id}/    Partial update
+DELETE /api/alerts/{id}/    Delete alert
+POST   /api/alerts/{id}/toggle/   Toggle alert active state
 ```
 
-### User Profile
+### Career Tools
 
 ```
-GET  /api/users/profile/
-PUT  /api/users/profile/
-GET  /api/users/quota/
+POST  /api/career/path/     Get career path for a role
+      Body: {"role": "software engineer"}
+
+POST  /api/career/upskill/  Get upskill plan
+      Body: {"current_role": "...", "target_role": "..."}
 ```
 
-### Premium Features
+### Interview Practice
 
 ```
-POST /api/premium/cv-review/
-POST /api/premium/cover-letter/
-POST /api/premium/career-path/
-POST /api/premium/upskill-plan/
-GET  /api/premium/interview/session/
-POST /api/premium/interview/start/
-POST /api/premium/interview/respond/
-POST /api/premium/interview/stop/
+POST   /api/interview/practice/   Start or respond to interview
+       Body: {"message": "user response"} or {} to start
+
+GET    /api/interview/session/    Check active session
+DELETE /api/interview/session/    Cancel/end session
 ```
 
-### Account Linking
+### CV Tools
 
 ```
-POST /api/link/account/
-POST /api/link/unlink/
-GET  /api/link/accounts/
+POST  /api/cv/review/       Get AI CV review
+POST  /api/cv/coverletter/  Generate cover letter
+      Body: {"job_title": "Software Engineer", "company": "Google"}
 ```
 
-### Subscription
+### Subscription / Quota
 
 ```
-POST /api/subscription/create/
-POST /api/subscription/verify/
+POST  /api/subscription/create/   Create subscription (disabled unless ENABLE_PAYMENTS=true)
+POST  /api/subscription/verify/   Verify payment (disabled unless ENABLE_PAYMENTS=true)
+GET   /api/subscription/quota/    Get quota and subscription status
 ```
 
-### Bot Webhooks
+### Webhooks
 
 ```
-POST /api/telegram/webhook/
-POST /api/whatsapp/webhook/
-GET  /api/whatsapp/webhook/  # Verification
+POST  /api/whatsapp/webhook/   WhatsApp webhook (Meta)
+GET   /api/whatsapp/webhook/   WhatsApp webhook verification
 ```
 
----
+### Other Endpoints
 
-## Bot Integration
-
-### Telegram Bot
-
-**Setup**:
-1. Create bot via @BotFather
-2. Set `TELEGRAM_BOT_TOKEN` in environment
-3. Configure webhook: `https://yourdomain.com/api/telegram/webhook/`
-
-**Commands**:
-- `/start` - Initialize bot
-- `/search <query>` - Search for jobs
-- `/alerts` - Manage job alerts
-- `/link` - Generate linking code
-- `/profile` - View profile
-- `/subscribe` - Manage subscription
-
-**Implementation**: `bot/bot.py`
-
-### WhatsApp Bot
-
-**Setup**:
-1. Create Meta Developer account
-2. Create WhatsApp Business App
-3. Configure environment variables:
-   - `META_ACCESS_TOKEN`
-   - `META_PHONE_NUMBER_ID`
-   - `META_VERIFY_TOKEN`
-4. Set webhook: `https://yourdomain.com/api/whatsapp/webhook/`
-
-**Message Handling**: Same commands as Telegram, text-based
-
-**Implementation**: `bot/whatsapp_bot.py`
-
-### Account Linking Flow
-
-1. User types `/link` in bot
-2. System generates 6-character code (valid 10 minutes)
-3. User enters code on web app
-4. System links `User` (bot) to `TenantUser` (web)
-5. Shared quota, alerts, and subscription status
+```
+GET   /health/          Health check
+GET   /                Status page (self-hosted)
+GET   /robots.txt      Robots file
+POST  /webhook/        Telegram webhook (if using webhook mode)
+```
 
 ---
 
 ## Authentication & Authorization
 
-### Web Authentication
+### API Authentication
 
-**Flow**:
-1. User registers/logs in via web
-2. Backend generates JWT access + refresh tokens
-3. Frontend stores tokens in localStorage
-4. Requests include `Authorization: Bearer <token>` header
-5. Kong gateway validates tokens
+The REST API uses a **static API token** from the environment:
 
-**Token Expiry**:
-- Access token: 60 minutes
-- Refresh token: 7 days
+1. Set `API_TOKEN` in `.env`
+2. Include `Authorization: Bearer <API_TOKEN>` in every request
+3. The `APITokenAuthentication` class validates the token and returns the default user
+
+```python
+# bot/authentication.py
+class APITokenAuthentication(authentication.BaseAuthentication):
+    def authenticate(self, request):
+        api_token = getattr(settings, "API_TOKEN", None)
+        if not api_token:
+            return None
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return None
+
+        token = auth_header.split("Bearer ", 1)[1].strip()
+        if token != api_token:
+            raise exceptions.AuthenticationFailed("Invalid API token")
+
+        bot_user = User.get_default_user()
+        return (APITokenUser(bot_user), None)
+```
 
 ### Bot Authentication
 
-Bots use platform IDs (Telegram ID, WhatsApp phone number) for identification. No JWT tokens required for bot requests.
+Bots use platform IDs (Telegram ID, WhatsApp phone number) for identification. No API token required for bot requests.
 
-### Multi-Tenancy
+### Session Authentication
 
-Each user belongs to a `Tenant` (organization). Data is isolated by tenant. Subscription status is per-tenant-user.
+Django session authentication is also enabled for the Django admin (`/admin/`).
+
+---
+
+## Telegram Bot
+
+The Telegram bot is the **primary user interface**. It runs via:
+
+```bash
+python manage.py run_bot
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Initialize bot and show welcome message |
+| `/findjobs <query>` | Search for jobs (e.g., `/findjobs python remote`) |
+| `/history` | View saved jobs |
+| `/build_cv` | Create a professional CV |
+| `/view_cv` | View current CV |
+| `/cv_review` | Get AI feedback on CV |
+| `/coverletter <Job> \| <Company>` | Generate a cover letter |
+| `/setalert <keyword>` | Create a job alert |
+| `/myalerts` | Manage alerts |
+| `/careerpath <role>` | Explore career progression |
+| `/upskill <role>` | Get a personalized learning plan |
+| `/practice` | Start a mock interview |
+| `/subscribe <email>` | Upgrade to premium (if payments enabled) |
+| `/quota` | Check free search limit |
+
+### Implementation
+
+- **File**: `bot/bot.py` — `JobSearchBot` class
+- **Library**: python-telegram-bot with `AIORateLimiter`
+- **Mode**: Polling by default (`run_polling()`); webhook mode available via `POST /webhook/`
+
+### Webhook Mode
+
+To use webhook mode instead of polling:
+
+```bash
+python manage.py set_telegram_webhook
+```
+
+Then configure your reverse proxy to forward `POST /webhook/` to the Django app.
+
+---
+
+## WhatsApp Bot
+
+The WhatsApp bot is **optional** and uses the Meta WhatsApp Business API.
+
+### Setup
+
+1. Create a Meta Developer account
+2. Create a WhatsApp Business App
+3. Configure environment variables:
+   - `META_ACCESS_TOKEN`
+   - `META_PHONE_NUMBER_ID`
+   - `META_VERIFY_TOKEN`
+4. Set webhook URL: `https://yourdomain.com/api/whatsapp/webhook/`
+
+### Message Handling
+
+Same commands as Telegram, text-based. See `docs/WHATSAPP_SETUP.md` for full setup instructions.
+
+### Implementation
+
+- **File**: `bot/whatsapp_bot.py` — `whatsapp_bot` instance
+- **Webhook**: `bot/api/whatsapp_webhook.py` — `WhatsAppWebhookView`
+
+---
+
+## Job Search Aggregation
+
+Job search aggregates results from multiple providers in `bot/functions/jobs.py`:
+
+| Provider | Type | Requires |
+|----------|------|----------|
+| JSearch (RapidAPI) | REST API | `RAPIDAPI_KEY` |
+| Adzuna | REST API | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` |
+| Careerjet | REST API | `CAREERJET_API_KEY` |
+| Findwork.dev | REST API | `FINDWORK_API_KEY` |
+| Jooble | REST API | `JOOBLE_API_KEY` |
+| Arbeitnow | REST API | None |
+| Remotive | REST API | None |
+| Jobicy | REST API | None |
+| Authentic Jobs | RSS Feed | None |
+
+Results are normalized to a common schema and filtered to jobs posted within the last 2 days.
+
+---
+
+## Background Tasks (Celery)
+
+Celery handles scheduled job alert checks.
+
+### Tasks
+
+- **`bot.tasks.check_alerts`** — Runs every 30 minutes (via Celery Beat), checks all active alerts, and sends Telegram notifications for new matching jobs.
+
+### Services
+
+- **`bot/services/career_path.py`** — Career path resolution with caching
+- **`bot/services/upskill.py`** — Upskill plan generation
+- **`bot/services/interview.py`** — Mock interview session management
+- **`bot/services/user_context.py`** — User context helpers
+
+---
+
+## Feature Flags
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_PREMIUM` | `true` | Unlocks all premium features (CV review, cover letters, interview practice, unlimited searches) |
+| `ENABLE_PAYMENTS` | `false` | Enables Paystack/Flutterwave payment integration |
+
+When `ENABLE_PREMIUM=true`, all users are treated as premium regardless of `subscription_status`.
+
+When `ENABLE_PAYMENTS=false`, subscription endpoints return `501 Not Implemented`.
 
 ---
 
@@ -302,70 +459,107 @@ Each user belongs to a `Tenant` (organization). Data is isolated by tenant. Subs
 
 ### Environment Variables
 
-Create `.env` file:
+Create `.env` file (see `.env.example`):
 
 ```bash
 # Django
-SECRET_KEY=your-secret-key
-DEBUG=False
+DJANGO_SECRET_KEY=change-me-in-production
+DEBUG=false
 ALLOWED_HOSTS=yourdomain.com
 
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/jobbot
+# Database (PostgreSQL)
+POSTGRES_DB=jobbot
+POSTGRES_USER=jobbot
+POSTGRES_PASSWORD=your-db-password
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
 
-# APIs
-RAPIDAPI_KEY=your-rapidapi-key
-GEMINI_API_KEY=your-gemini-key
-PAYSTACK_SECRET_KEY=your-paystack-key
+# Single-user API access
+API_TOKEN=generate-a-long-random-token
 
-# Bots
+# Feature flags (self-hosted defaults)
+ENABLE_PREMIUM=true
+ENABLE_PAYMENTS=false
+
+# Telegram bot (primary UI)
 TELEGRAM_BOT_TOKEN=your-telegram-token
-META_ACCESS_TOKEN=your-whatsapp-token
-META_PHONE_NUMBER_ID=your-phone-id
-META_VERIFY_TOKEN=your-verify-token
 
-# Kong
-KONG_ADMIN_URL=http://kong:8001
+# Celery / Redis
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+
+# Job search APIs (at least one recommended)
+ADZUNA_APP_ID=
+ADZUNA_APP_KEY=
+CAREERJET_API_KEY=
+FINDWORK_API_KEY=
+JOOBLE_API_KEY=
+RAPIDAPI_KEY=
+
+# AI providers (for CV review, cover letters, interview practice)
+GROQ_API_KEY=
+GEMINI_API_KEY=
+MISTRAL_API_KEY=
+
+# Optional: WhatsApp
+META_ACCESS_TOKEN=
+META_PHONE_NUMBER_ID=
+META_VERIFY_TOKEN=
+
+# Optional: Monitoring
+SENTRY_DSN=
 ```
 
 ### Docker Deployment
 
 ```bash
-# Build and run
-docker-compose up -d
+# Build and run all services
+docker compose up -d
 
 # Run migrations
-docker-compose exec web python manage.py migrate
+docker compose exec job-web python manage.py migrate
 
-# Create superuser
-docker-compose exec web python manage.py createsuperuser
+# Create superuser (for admin)
+docker compose exec job-web python manage.py createsuperuser
+```
+
+Services: `job-web` (Gunicorn API), `job-bot` (Telegram bot), `db` (PostgreSQL), `redis`, `celery` (worker), `celery-beat`.
+
+### Local Deployment
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your tokens and keys
+
+# Run migrations
+python manage.py migrate
+
+# Start API server
+python manage.py runserver
+
+# In another terminal, start the Telegram bot
+python manage.py run_bot
+
+# In another terminal, start Celery worker + beat
+celery -A jobsearchbot worker --loglevel=info
+celery -A jobsearchbot beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
 ```
 
 ### Production Checklist
 
-- [ ] Set `DEBUG=False`
+- [ ] Set `DEBUG=false`
 - [ ] Configure proper `ALLOWED_HOSTS`
+- [ ] Set a strong `DJANGO_SECRET_KEY`
+- [ ] Generate a strong `API_TOKEN`
 - [ ] Use production database (PostgreSQL)
 - [ ] Set up SSL/TLS certificates
-- [ ] Configure Kong gateway
-- [ ] Set webhook URLs for bots
-- [ ] Configure payment gateway (Paystack)
-- [ ] Set up monitoring and logging
+- [ ] Configure webhook URLs for bots (or use polling)
+- [ ] Set up monitoring and logging (Sentry optional)
 - [ ] Configure backup strategy
-- [ ] Set up CDN for static files
-
-### Database Migrations
-
-```bash
-# Create migrations
-python manage.py makemigrations
-
-# Apply migrations
-python manage.py migrate
-
-# Rollback migration
-python manage.py migrate app_name previous_migration_name
-```
 
 ---
 
@@ -373,8 +567,8 @@ python manage.py migrate app_name previous_migration_name
 
 ### Prerequisites
 - Python 3.10+
-- Node.js 18+
 - PostgreSQL 14+
+- Redis
 - Docker (optional)
 
 ### Backend Setup
@@ -387,6 +581,9 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
+# Configure environment
+cp .env.example .env
+
 # Run migrations
 python manage.py migrate
 
@@ -394,28 +591,21 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-### Frontend Setup
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
 ### Bot Setup
 
-Set webhook URLs in development:
 ```bash
-# Telegram
-curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourdomain.com/api/telegram/webhook/"
-
-# WhatsApp
-# Configure in Meta Developer Console
+# Start Telegram bot (polling mode)
+python manage.py run_bot
 ```
+
+### Management Commands
+
+| Command | Description |
+|---------|-------------|
+| `python manage.py run_bot` | Run the Telegram bot (polling) |
+| `python manage.py set_telegram_webhook` | Set the Telegram webhook URL |
+| `python manage.py setup_tasks` | Set up Celery beat tasks |
+| `python manage.py verify_changes` | Verify database changes |
 
 ---
 
@@ -426,14 +616,18 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://yourdom
 ```bash
 # Backend tests
 python manage.py test
-
-# Frontend tests
-cd frontend && npm test
 ```
 
 ### Manual Testing
 
-Use tools like Postman or curl to test API endpoints. For bots, use the actual Telegram/WhatsApp apps.
+Use tools like Postman, curl, or the Swagger UI at `/api/docs/` to test API endpoints. For bots, use the actual Telegram/WhatsApp apps.
+
+Example curl:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_TOKEN" \
+  http://127.0.0.1:8000/api/user/profile/
+```
 
 ---
 
@@ -442,26 +636,32 @@ Use tools like Postman or curl to test API endpoints. For bots, use the actual T
 ### Common Issues
 
 **Database Connection Error**:
-- Check `DATABASE_URL` in `.env`
+- Check `POSTGRES_*` variables in `.env`
 - Ensure PostgreSQL is running
 - Verify credentials
 
 **Bot Not Responding**:
-- Check webhook configuration
-- Verify bot token
+- Check `TELEGRAM_BOT_TOKEN` in `.env`
+- Verify the bot is running (`python manage.py run_bot`)
 - Check server logs
 
-**Authentication Errors**:
-- Verify JWT token is valid
-- Check token expiry
-- Ensure Kong is configured correctly
+**API Authentication Errors**:
+- Verify `API_TOKEN` is set in `.env`
+- Ensure `Authorization: Bearer <token>` header is correct
+- Check that `API_TOKEN` matches exactly
+
+**Job Search Returns No Results**:
+- Verify at least one job search API key is configured
+- Check API rate limits
+- Try a broader search query
 
 ---
 
 ## Additional Resources
 
 - [Django Documentation](https://docs.djangoproject.com/)
-- [Next.js Documentation](https://nextjs.org/docs)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Django Rest Framework](https://www.django-rest-framework.org/)
+- [drf-spectacular (OpenAPI)](https://drf-spectacular.readthedocs.io/)
+- [python-telegram-bot](https://python-telegram-bot.org/)
 - [WhatsApp Business API](https://developers.facebook.com/docs/whatsapp)
-- [Kong Gateway](https://docs.konghq.com/)
+- [Celery](https://docs.celeryq.dev/)

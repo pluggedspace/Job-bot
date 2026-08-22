@@ -65,7 +65,7 @@ META_VERIFY_TOKEN = os.getenv('META_VERIFY_TOKEN')
 2. Click "Edit" under Webhook
 3. Enter your webhook URL:
    ```
-   https://api.pluggedspace.org/api/whatsapp/webhook
+   https://yourdomain.com/api/whatsapp/webhook
    ```
 4. Enter your **Verify Token** (same as `META_VERIFY_TOKEN` in .env)
 5. Click "Verify and Save"
@@ -151,11 +151,9 @@ Test all features:
 /careerpath developer - Career paths
 /upskill data scientist - Learning plan
 /quota - Check limits
-/link - Generate link code
-/account - Account info
 ```
 
-Premium features (requires subscription):
+Premium features (unlocked by default with `ENABLE_PREMIUM=true`):
 ```
 /cv_review - AI CV review
 /coverletter Software Engineer | Google - Generate cover letter
